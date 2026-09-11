@@ -106,17 +106,19 @@ def _tui(
         raise QuartermasterError("curses unavailable; use status or tui --once") from exc
 
     def run(screen):
+        if not curses.has_colors():
+            raise QuartermasterError(
+                "Terminal color support is required; use tui --once for noninteractive output"
+            )
         try:
             curses.curs_set(0)
         except curses.error:
             pass
         screen.keypad(True)
-        screen.attrset(curses.A_BOLD)
-        if curses.has_colors():
-            curses.start_color()
-            curses.init_pair(1, curses.COLOR_WHITE, curses.COLOR_BLACK)
-            screen.bkgd(" ", curses.color_pair(1))
-            screen.attrset(curses.color_pair(1) | curses.A_BOLD)
+        curses.start_color()
+        curses.init_pair(1, curses.COLOR_WHITE, curses.COLOR_BLACK)
+        screen.bkgd(" ", curses.color_pair(1))
+        screen.attrset(curses.color_pair(1) | curses.A_BOLD)
         screen.nodelay(True)
         while True:
             report = view(store.read())

@@ -132,3 +132,63 @@ def test_live_rotation_visits_every_account(tmp_path):
 
         wait(complete)
     assert seen == set(range(1, 12))
+
+
+def test_no_color_terminal_fails_and_restores_state(tmp_path):
+    master, slave = pty.openpty()
+    original = termios.tcgetattr(slave)
+    process = subprocess.Popen(
+        [
+            sys.executable,
+            "-m",
+            "quartermaster.cli",
+            "--state-dir",
+            str(tmp_path),
+            "tui",
+        ],
+        stdin=slave,
+        stdout=slave,
+        stderr=slave,
+        start_new_session=True,
+        env={**os.environ, "TERM": "dumb"},
+    )
+    output = bytearray()
+    deadline = time.monotonic() + 5
+    try:
+        while process.poll() is None and time.monotonic() < deadline:
+            ready, _, _ = select.select([master], [], [], 0.05)
+            if ready:
+                output.extend(os.read(master, 65536))
+        process.wait(timeout=1)
+        while True:
+            ready, _, _ = select.select([master], [], [], 0)
+            if not ready:
+                break
+            output.extend(os.read(master, 65536))
+        assert process.returncode == 1
+        assert b"Terminal color support is required" in output
+        restored = termios.tcgetattr(slave)
+        for attributes in (original, restored):
+            attributes[3] &= ~getattr(termios, "PENDIN", 0)
+        assert restored == original
+        once = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "quartermaster.cli",
+                "--state-dir",
+                str(tmp_path),
+                "tui",
+                "--once",
+            ],
+            env={**os.environ, "TERM": "dumb"},
+            capture_output=True,
+            check=False,
+        )
+        assert once.returncode == 0
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.wait(timeout=1)
+        os.close(master)
+        os.close(slave)

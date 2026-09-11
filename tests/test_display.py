@@ -78,6 +78,7 @@ def ingested_report(
                                 "status": "known",
                                 "effectivePercentRemaining": effective,
                                 "boundedBy": ["five_hour"],
+                                "limitingWindowIds": ["five_hour"],
                             }
                         ],
                     },
@@ -124,7 +125,7 @@ def test_model_limit_and_zero_are_not_hidden_by_session():
     assert "model:example" in lines[6]
 
 
-def test_quota_axi_uses_only_explicit_bounds():
+def test_quota_axi_requires_complete_explicit_bounds():
     account = fleet(1)["accounts"][0]
     account["source"] = "quota-axi"
     account["usageStatus"] = "fresh"
@@ -135,12 +136,13 @@ def test_quota_axi_uses_only_explicit_bounds():
             {
                 "status": "known",
                 "scope": "all_models",
-                "boundedBy": ["five_hour"],
-                "effectivePercentRemaining": 80,
+                "boundedBy": ["five_hour", "seven_day"],
+                "effectivePercentRemaining": 25,
+                "limitingWindowIds": ["seven_day"],
             }
         ],
     }
-    assert binding(account, NOW)[0]["scope"] == "five_hour"
+    assert binding(account, NOW)[0]["scope"] == "seven_day"
     account["quotaSemantics"]["effectiveAvailability"][0]["boundConflict"] = {"a": 1}
     assert binding(account, NOW)[0] is None
 
@@ -232,7 +234,8 @@ def test_ingested_naive_measurement_does_not_show_headroom(tmp_path, kind):
 
 
 @pytest.mark.parametrize(
-    "effective", [0, 90, None, True, "25", -1, 101, float("nan"), float("inf")]
+    "effective",
+    [0, 90, None, True, "25", -1, 101, 10**400, float("nan"), float("inf")],
 )
 def test_ingested_conflicting_effective_quota_does_not_show_headroom(tmp_path, effective):
     report = ingested_report(tmp_path, "quota-axi", "2099-01-01T00:00:00Z", effective=effective)
@@ -252,8 +255,10 @@ def test_ingested_conflicting_effective_quota_does_not_show_headroom(tmp_path, e
         "duplicate-window",
         "unresolved",
         "conflict-marker",
+        "missing-limiter",
         "wrong-limiter",
         "malformed-limiter",
+        "unreferenced-window",
         "second-scope-conflict",
     ],
 )
@@ -278,10 +283,20 @@ def test_conflicting_normalized_scope_metadata_fails_closed(tmp_path, case):
         semantics["unresolvedWindowIds"] = ["unknown"]
     elif case == "conflict-marker":
         scope["boundConflict"] = {}
+    elif case == "missing-limiter":
+        del scope["limitingWindowIds"]
     elif case == "wrong-limiter":
         scope["limitingWindowIds"] = ["unknown"]
     elif case == "malformed-limiter":
         scope["limitingWindowIds"] = [{}]
+    elif case == "unreferenced-window":
+        account["windows"].append(
+            {
+                "scope": "weekly",
+                "percentRemaining": 10,
+                "resetsAt": "2099-01-07T00:00:00Z",
+            }
+        )
     else:
         semantics["effectiveAvailability"].append(
             {
@@ -326,6 +341,43 @@ def test_explicit_measurement_offset_keeps_valid_evidence(tmp_path, kind):
         tmp_path, kind, "2026-09-12T12:00:00Z", measured="2026-09-11T05:00:00-07:00"
     )
     assert binding(report["accounts"][0], NOW)[1] == "FRESH"
+
+
+@pytest.mark.parametrize(
+    "kind,measured,effective",
+    [
+        ("cswap", "2099-01-01T00:00:00", 25),
+        ("quota-axi", "2099-01-01T00:00:00Z", 90),
+    ],
+)
+def test_compact_and_plain_status_fail_closed_for_invalid_evidence(
+    tmp_path, capsys, kind, measured, effective
+):
+    ingested_report(
+        tmp_path,
+        kind,
+        "2099-01-07T00:00:00Z",
+        measured=measured,
+        effective=effective,
+    )
+    commands = [("tui", "--once", "--compact"), ("status",)]
+    for command in commands:
+        assert main(["--state-dir", str(tmp_path), *command]) == 0
+        output = capsys.readouterr().out
+        assert " 25 /" not in output
+        assert " ? /" in output
+
+
+@pytest.mark.parametrize("kind", ["cswap", "quota-axi"])
+def test_compact_keeps_valid_numeric_evidence(tmp_path, capsys, kind):
+    ingested_report(
+        tmp_path,
+        kind,
+        "2099-01-07T00:00:00Z",
+        measured="2099-01-01T00:00:00Z",
+    )
+    assert main(["--state-dir", str(tmp_path), "tui", "--once", "--compact"]) == 0
+    assert " 25 /" in capsys.readouterr().out
 
 
 def test_all_eleven_accounts_rotate_in_under_a_minute():

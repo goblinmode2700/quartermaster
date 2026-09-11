@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from datetime import datetime
 from typing import Any
 
-from .render import fit_text
+from .render import binding, evidence_time, fit_text
 
 DEFAULT_ROTATE_SECONDS = 5.0  # Ten accounts in 50 seconds; eleven in 55.
 
@@ -26,27 +25,6 @@ GLYPHS = {
     "?": ("▀▀█", " ▀ ", " ▄ "),
     "%": ("█ ▄", " ▄ ", "▄ █"),
 }
-
-
-def _evidence_time(value: Any) -> float | None:
-    if not isinstance(value, str):
-        return None
-    try:
-        parsed = datetime.fromisoformat(value)
-    except ValueError:
-        return None
-    if parsed.tzinfo is None or parsed.utcoffset() is None:
-        return None
-    return parsed.timestamp()
-
-
-def _percentage(value: Any) -> bool:
-    return (
-        not isinstance(value, bool)
-        and isinstance(value, (int, float))
-        and math.isfinite(value)
-        and 0 <= value <= 100
-    )
 
 
 @dataclass
@@ -103,79 +81,8 @@ class Rotation:
         self.due = now + self.interval
 
 
-def binding(account: dict[str, Any], now: float) -> tuple[dict[str, Any] | None, str]:
-    """Only show current known numeric evidence; unknown relationships stay explicit."""
-    freshness = account.get("freshness", "unknown")
-    if freshness != "fresh":
-        return None, freshness.upper()
-    if _evidence_time(account.get("measurementAt")) is None:
-        return None, "UNKNOWN MEASUREMENT"
-    if account.get("usageStatus") not in {"ok", "fresh"}:
-        return None, "UNKNOWN"
-    windows = account.get("windows", [])
-    scopes = []
-    if account.get("source") == "quota-axi":
-        semantics = account.get("quotaSemantics")
-        if not isinstance(semantics, dict):
-            return None, "UNKNOWN BOUNDS"
-        scopes = semantics.get("effectiveAvailability", [])
-        if (
-            semantics.get("status") != "known"
-            or semantics.get("unresolvedWindowIds", []) != []
-            or not isinstance(scopes, list)
-            or not scopes
-            or any(
-                not isinstance(scope, dict)
-                or scope.get("status") != "known"
-                or not isinstance(scope.get("scope"), str)
-                or not scope["scope"]
-                or "boundConflict" in scope
-                or not isinstance(scope.get("boundedBy"), list)
-                or not scope["boundedBy"]
-                or any(not isinstance(bound, str) for bound in scope["boundedBy"])
-                or len(set(scope["boundedBy"])) != len(scope["boundedBy"])
-                or not _percentage(scope.get("effectivePercentRemaining"))
-                for scope in scopes
-            )
-        ):
-            return None, "UNKNOWN BOUNDS"
-        if len({s["scope"] for s in scopes}) != len(scopes):
-            return None, "UNKNOWN BOUNDS"
-        bound_ids = {wid for scope in scopes for wid in scope.get("boundedBy", [])}
-        window_ids = {w["scope"] for w in windows}
-        if len(window_ids) != len(windows) or not bound_ids.issubset(window_ids):
-            return None, "UNKNOWN BOUNDS"
-        windows = [w for w in windows if w["scope"] in bound_ids]
-    if not windows:
-        return None, "UNKNOWN"
-    for window in windows:
-        value = window.get("percentRemaining")
-        if not _percentage(value):
-            return None, "UNKNOWN"
-        reset = window.get("resetsAt")
-        stamp = _evidence_time(reset)
-        if stamp is None or stamp <= now:
-            return None, "UNKNOWN RESET"
-    for scope in scopes:
-        bounds = [w for w in windows if w["scope"] in scope["boundedBy"]]
-        minimum = min(w["percentRemaining"] for w in bounds)
-        if scope["effectivePercentRemaining"] != minimum:
-            return None, "UNKNOWN BOUNDS"
-        if "limitingWindowIds" in scope:
-            reported = scope["limitingWindowIds"]
-            expected = {w["scope"] for w in bounds if w["percentRemaining"] == minimum}
-            if (
-                not isinstance(reported, list)
-                or any(not isinstance(wid, str) for wid in reported)
-                or set(reported) != expected
-                or len(reported) != len(expected)
-            ):
-                return None, "UNKNOWN BOUNDS"
-    return min(windows, key=lambda w: (w["percentRemaining"], w["scope"])), "FRESH"
-
-
 def countdown(value: str | None, now: float) -> str:
-    stamp = _evidence_time(value)
+    stamp = evidence_time(value)
     if stamp is None:
         return "UNKNOWN"
     seconds = max(0, int(stamp - now))
