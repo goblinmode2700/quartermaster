@@ -24,25 +24,25 @@ State defaults to `~/.local/state/quartermaster`. Override it with `--state-dir`
 
 ## Evidence boundary
 
-Quartermaster never invokes cswap or quota-axi. Infrastructure-owned observation hooks collect evidence and pipe JSON into Quartermaster. Ordinary `cswap list --json` may refresh credentials, resynchronize backups, or perform migrations; that command must remain under the credential owner's control.
+Quartermaster reads JSON produced by cswap and quota-axi. Collection runs separately. Ordinary `cswap list --json` may refresh credentials, resynchronize backups, or perform migrations; check its behavior before adding it to an automated collection hook.
 
 Supported source contracts:
 
 - cswap v0.26.0, JSON schema v1 (`cswap list --json`)
 - quota-axi 0.1.41 at commit `a19268827220e12e173067d11703e6ee36d5d88f`, JSON schema v5, with Claude excluded
 
-A safe non-Claude collection recipe for the infrastructure-owned hook is:
+A non-Claude collection example is:
 
 ```sh
 quota-axi --provider codex,cursor,copilot,grok,kimi,zai,agy,alibaba,opencode-go \
   --no-credential-refresh --json \
-  | quartermaster ingest quota-axi --host work-laptop
+  | quartermaster ingest quota-axi --host host-a
 ```
 
-The credential owner may separately run its qualified cswap command and pipe only the resulting document:
+To import an existing cswap JSON document:
 
 ```sh
-quartermaster ingest cswap --host work-laptop < sanitized-or-live-cswap.json
+quartermaster ingest cswap --host host-a < cswap.json
 ```
 
 Malformed input is rejected before the state lock is acquired and never replaces the last good snapshot. Each source/host snapshot is replaced independently, so concurrent ingestion preserves other providers and the request ledger.
@@ -97,13 +97,12 @@ Fixtures use reserved `.invalid` identities and future timestamps; they contain 
 
 The repository test suite covers schema rejection, atomic last-good preservation, independent source updates, two-account identity, stale/unknown states, weekly exhaustion, request replay/content mismatch, concurrent reservations, reconciliation, and 32×6/tiny rendering. CI runs lint, tests, and wheel builds on Python 3.11–3.13.
 
-Fixture-qualified package checks are not work-machine integration proof. Still required on the work machine:
+Synthetic tests do not verify a live installation. Before use:
 
-- infrastructure-owner qualification of cswap v0.26.0 and its recovery path;
-- confirmation that two real account labels and independent windows appear without changing the default account;
-- measured pane dimensions and resize/exit smoke test;
-- installed `quartermaster status --json` read by the existing runtime;
-- sanitized report of versions, schema, freshness, side effects, and rollback evidence.
+- Check the installed cswap version and recovery procedure.
+- Verify account labels and independent quota windows.
+- Check the display at the intended terminal size, including resize and exit.
+- Verify the consumer can read the installed `quartermaster status --json` output.
 
 Rollback is `uv tool uninstall quartermaster-quota` (or reinstall a prior tag). Removing Quartermaster does not alter either upstream credential store. Preserve the state directory if pending ledger reconciliation is still needed.
 
