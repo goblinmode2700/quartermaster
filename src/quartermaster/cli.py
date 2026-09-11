@@ -9,13 +9,14 @@ import sys
 import time
 from pathlib import Path
 
+from .consult import DEFAULT_QUESTION, consult
 from .core import BusyError, QuartermasterError, Store, advise, ingest, reconcile, select_view, view
 from .display import DEFAULT_ROTATE_SECONDS, Rotation, card
 from .render import render
 
 
 def parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="quartermaster")
+    p = argparse.ArgumentParser(prog="quartermaster", allow_abbrev=False)
     p.add_argument(
         "--state-dir",
         type=Path,
@@ -57,6 +58,18 @@ def parser() -> argparse.ArgumentParser:
     rec.add_argument("request_id")
     rec.add_argument("event", choices=["cancel", "launch", "complete"])
     rec.add_argument("--process-id")
+    con = sub.add_parser(
+        "consult", allow_abbrev=False,
+        help="Consult native Claude; arguments after -- replace saved Claude arguments",
+    )
+    con.add_argument("--config", type=Path, help="Claude JSON configuration (default: STATE_DIR/claude.json)")
+    con.add_argument("--claude", help="Claude executable path or command name")
+    con.add_argument("--context", type=Path, help="Consumer JSON object: roster, preferences, proposed work")
+    con.add_argument("--question", default=DEFAULT_QUESTION)
+    con.add_argument("--headless", action="store_true", help="Add Claude's -p flag")
+    con.add_argument("--timeout", type=float, default=120, help="Headless timeout in seconds (default: 120)")
+    con.add_argument("--dry-run", action="store_true", help="Prepare input and show argv without running Claude")
+    con.add_argument("claude_args", nargs=argparse.REMAINDER, help="Use -- before Claude arguments")
     return p
 
 
@@ -160,7 +173,13 @@ def _tui(
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = parser().parse_args(argv)
+    cli = parser()
+    args = cli.parse_args(argv)
+    forwarded = None
+    if args.command == "consult" and args.claude_args:
+        if args.claude_args[0] != "--":
+            cli.error("use -- before Claude arguments; use --question for the consultation question")
+        forwarded = args.claude_args[1:]
     store = Store(args.state_dir, args.lock_timeout)
     try:
         if args.command == "ingest":
@@ -184,6 +203,12 @@ def main(argv: list[str] | None = None) -> int:
                 args.reserve,
             )
             print(json.dumps(result, indent=2))
+        elif args.command == "consult":
+            return consult(
+                store, config=args.config, executable=args.claude, forwarded=forwarded,
+                question=args.question, context_path=args.context, headless=args.headless,
+                timeout=args.timeout, dry_run=args.dry_run,
+            )
         else:
             print(
                 json.dumps(reconcile(store, args.request_id, args.event, args.process_id), indent=2)

@@ -7,6 +7,7 @@ import tempfile
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
+from copy import deepcopy
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -101,6 +102,7 @@ def _window(scope: str, raw: dict[str, Any], source: str) -> dict[str, Any]:
     if pct is not None and (not isinstance(pct, (int, float)) or not 0 <= pct <= 100):
         raise QuartermasterError(f"invalid percentage for {scope}")
     return {
+        **deepcopy(raw),
         "scope": scope,
         "percentRemaining": pct,
         "resetsAt": raw.get("resetsAt"),
@@ -180,8 +182,11 @@ def normalize_quota_axi(data: Any, host: str, collected_at: str) -> dict[str, An
 
 
 def ingest(store: Store, kind: str, data: Any, host: str, now: str | None = None) -> dict[str, Any]:
+    if kind not in {"cswap", "quota-axi"}:
+        raise QuartermasterError("unsupported source kind")
     collected_at = now or utc_now()
     normalized = (normalize_cswap if kind == "cswap" else normalize_quota_axi)(data, host, collected_at)
+    normalized["raw"] = deepcopy(data)
     key = f"{kind}:{host}"
     with store.locked() as state:
         state["sources"][key] = normalized
@@ -205,6 +210,7 @@ def view(state: dict[str, Any], now: float | None = None,
             accounts.append(item)
     return {"schemaVersion": SCHEMA_VERSION, "displayedAt": utc_now(), "freshnessSeconds": freshness_seconds,
             "accounts": accounts, "requests": list(state["requests"].values()),
+            "sources": state["sources"],
             "view": state.get("view")}
 
 

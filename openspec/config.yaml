@@ -1,0 +1,8 @@
+schema: spec-driven
+
+context: |
+  Quartermaster is a local quota viewer and Claude-based consultation tool.
+  Keep complete source evidence separate from derived display fields.
+  Reuse Claude Code, Python standard libraries, and the existing state lock.
+  Keep examples synthetic. Keep consumer data outside the repository.
+  Use focused tests. Do not require a separate review service.

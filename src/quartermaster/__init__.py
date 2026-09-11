@@ -1,3 +1,3 @@
-"""Quartermaster quota evidence and advisory ledger."""
+"""Quartermaster quota evidence and native Claude consultations."""
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
