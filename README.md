@@ -82,7 +82,7 @@ Keys `1`–`9` select the corresponding account; `0` selects account ten. Space 
 
 Selected identities remain selected if account order changes. If a held account disappears, the display says it is unavailable. Resume rotation or select another account to continue.
 
-The bar and digits show the lowest remaining percentage among reported limiting windows; the countdown belongs to that same window. Values are rounded down to whole percentages. For quota-axi, explicit known window relationships are required. Stale, unavailable, missing, conflicting, or expired evidence shows `?` and its status instead of current headroom. Unknown-window relationships are labeled `UNKNOWN BOUNDS`. This display does not estimate how many tasks an account can finish.
+The bar and digits show the lowest remaining percentage among reported limiting windows; the countdown belongs to that same window. Values are rounded down to whole percentages. For quota-axi, explicit known window relationships are required. A limiting window is known only when its reset timestamp includes an explicit UTC offset; `Z` is accepted. An omitted, null, malformed, timezone-naive, or expired reset shows `UNKNOWN RESET` and `?` instead of headroom. Other stale, unavailable, missing, or conflicting evidence also shows `?` and its status. Unknown-window relationships are labeled `UNKNOWN BOUNDS`. This display does not estimate how many tasks an account can finish.
 
 Below nine rows the selected account uses a compact text card. Below 20×3 the display reports the minimum size. Without `--compact`, `tui --once` prints one card and exits; it does not rotate or change terminal colors.
 
