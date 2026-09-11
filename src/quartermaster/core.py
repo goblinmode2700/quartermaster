@@ -184,6 +184,9 @@ def ingest(store: Store, kind: str, data: Any, host: str, now: str | None = None
     normalized = (normalize_cswap if kind == "cswap" else normalize_quota_axi)(data, host, collected_at)
     key = f"{kind}:{host}"
     with store.locked() as state:
+        previous = state["sources"].get(key)
+        if previous:
+            normalized["previousAccounts"] = previous["accounts"]
         state["sources"][key] = normalized
         store.write(state)
     return normalized
@@ -250,6 +253,33 @@ def request_fingerprint(provider: str, model: str | None, metadata: dict[str, An
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
+def rate_evidence(state: dict[str, Any], account: dict[str, Any], clock: float) -> dict[str, Any]:
+    """Derive conservative rate evidence from two distinct source measurements."""
+    source = state["sources"].get(f"{account['source']}:{account['host']}", {})
+    previous = next((a for a in source.get("previousAccounts", [])
+                     if a.get("identity") == account["identity"]), None)
+    current_at = parse_time(account.get("measurementAt"))
+    previous_at = parse_time(previous.get("measurementAt")) if previous else None
+    if not previous or current_at is None or previous_at is None or current_at <= previous_at:
+        return {"status": "unknown", "reason": "two distinct measurements unavailable"}
+    prior_windows = {w["scope"]: w for w in previous.get("windows", [])}
+    intervals = []
+    for current in account.get("windows", []):
+        prior = prior_windows.get(current["scope"])
+        current_pct, prior_pct = current.get("percentRemaining"), prior.get("percentRemaining") if prior else None
+        if (not prior or current.get("resetsAt") != prior.get("resetsAt") or
+                current_pct is None or prior_pct is None or current_pct > prior_pct):
+            continue
+        rate = (prior_pct - current_pct) / (current_at - previous_at)
+        reset_at = parse_time(current.get("resetsAt"))
+        projected = None if reset_at is None else current_pct - rate * max(0, reset_at - clock)
+        intervals.append({"scope": current["scope"], "pointsPerSecond": rate,
+                          "projectedRemainingAtReset": projected})
+    if not intervals:
+        return {"status": "unknown", "reason": "reset change, counter increase, or missing window"}
+    return {"status": "known", "intervalSeconds": current_at - previous_at, "windows": intervals}
+
+
 def advise(store: Store, request_id: str, provider: str, model: str | None,
            metadata: dict[str, Any], reserve: float = 10, now: float | None = None) -> dict[str, Any]:
     clock = now if now is not None else time.time()
@@ -270,12 +300,18 @@ def advise(store: Store, request_id: str, provider: str, model: str | None,
         for account in eligible:
             windows = account.get("windows", [])
             pcts = [w["percentRemaining"] for w in windows if w.get("percentRemaining") is not None]
+            rate = rate_evidence(state, account, clock)
+            projected_risk = any(w.get("projectedRemainingAtReset") is not None and
+                                 w["projectedRemainingAtReset"] <= reserve
+                                 for w in rate.get("windows", []))
             if account["freshness"] != "fresh" or not windows or len(pcts) != len(windows):
                 grade, reason = "UNKNOWN", "missing or stale current evidence"
             elif min(pcts) <= 0:
                 grade, reason = "RED", "a limiting window is exhausted"
             elif min(pcts) <= reserve:
                 grade, reason = "YELLOW", f"headroom is at or below {reserve:g}-point reserve"
+            elif projected_risk:
+                grade, reason = "YELLOW", "recent consumption projects through reserve before reset"
             else:
                 pending_green = any(r.get("accountIdentity") == account["identity"] and
                                     r.get("status") in {"pending", "active"} and r.get("decision") == "GREEN"
@@ -286,17 +322,22 @@ def advise(store: Store, request_id: str, provider: str, model: str | None,
                     grade, reason = "YELLOW", "quota is healthy but demand evidence is missing"
                 else:
                     grade, reason = "GREEN", "fresh windows preserve reserve with demand evidence"
-            decisions.append((grade, min(pcts) if pcts else -1, account, reason))
+            decisions.append((grade, min(pcts) if pcts else -1, account, reason, rate))
         rank = {"GREEN": 3, "YELLOW": 2, "UNKNOWN": 1, "RED": 0}
         if decisions:
-            grade, _, account, reason = max(decisions, key=lambda x: (rank[x[0]], x[1], x[2]["identity"]))
+            grade, _, account, reason, rate = max(
+                decisions, key=lambda x: (rank[x[0]], x[1], x[2]["identity"])
+            )
             identity, label = account["identity"], account["label"]
         else:
-            grade, reason, identity, label = "UNKNOWN", "no eligible account evidence", None, None
+            grade, reason, identity, label, rate = (
+                "UNKNOWN", "no eligible account evidence", None, None,
+                {"status": "unknown", "reason": "no eligible account"},
+            )
         record = {"requestId": request_id, "fingerprint": fingerprint, "provider": provider,
                   "model": model, "decision": grade, "reason": reason, "accountIdentity": identity,
                   "accountLabel": label, "status": "pending", "createdAt": utc_now(),
-                  "metadata": metadata, "validity": "recorded"}
+                  "metadata": metadata, "rateEvidence": rate, "validity": "recorded"}
         state["requests"][request_id] = record
         store.write(state)
         return record

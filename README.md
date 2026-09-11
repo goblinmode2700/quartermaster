@@ -45,7 +45,7 @@ To import an existing cswap JSON document:
 quartermaster ingest cswap --host host-a < cswap.json
 ```
 
-Malformed input is rejected before the state lock is acquired and never replaces the last good snapshot. Each source/host snapshot is replaced independently, so concurrent ingestion preserves other providers and the request ledger.
+Malformed input is rejected before the state lock is acquired and never replaces the last good snapshot. Each source/host snapshot is replaced independently, retaining one prior normalized sample for rate evidence, so concurrent ingestion preserves other providers and the request ledger.
 
 ## Commands
 
@@ -105,6 +105,8 @@ Advice is arithmetic, advisory, and deterministic:
 3. Headroom at or below the configurable reserve (10 percentage points by default) is `YELLOW`.
 4. Fresh windows above reserve are still `YELLOW` when demand evidence is missing or that account already has unresolved green demand.
 5. `GREEN` requires fresh relevant windows, intact reserve, demand evidence, and an unreserved eligible account.
+
+Recent rate evidence requires two distinct measurements of the same identity and window. A reset change, counter increase, or repeated measurement invalidates the interval. When the observed rate projects through the reserve before that window resets, advice is `YELLOW`. A display redraw never creates a rate sample.
 
 The ledger uses one stable `flock` with bounded wait, re-reads state under the lock, deduplicates request IDs by content, computes against pending/active demand, and atomically persists the decision before returning it. Contention exits 75 with `BUSY`. A lost reply can be retried with the same request ID. Reusing an ID with changed content fails. A launch changes pending demand to active; it does not release it. Time alone never releases a reservation. Cancellation or completion is explicit.
 
