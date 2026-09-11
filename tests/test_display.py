@@ -10,6 +10,7 @@ from quartermaster.core import QuartermasterError, Store, ingest, select_view, v
 from quartermaster.display import Rotation, binding, card
 
 NOW = 1789128000.0
+MISSING = object()
 
 
 def fleet(count=11):
@@ -38,6 +39,49 @@ def fleet(count=11):
             for i in range(1, count + 1)
         ]
     }
+
+
+def ingested_report(tmp_path, kind, reset=MISSING):
+    window = {"id": "five_hour", "percentRemaining": 25}
+    if reset is not MISSING:
+        window["resetsAt"] = reset
+    measured = "2026-09-11T12:00:00Z"
+    if kind == "cswap":
+        document = {
+            "schemaVersion": 1,
+            "accounts": [
+                {
+                    "number": 1,
+                    "email": "account@example.invalid",
+                    "usageStatus": "ok",
+                    "usageFetchedAt": measured,
+                    "usage": {"fiveHour": window},
+                }
+            ],
+        }
+    else:
+        document = {
+            "schemaVersion": 5,
+            "providers": [
+                {
+                    "provider": "example",
+                    "state": {"status": "fresh", "refreshedAt": measured},
+                    "windows": [window],
+                    "quotaSemantics": {
+                        "status": "known",
+                        "effectiveAvailability": [
+                            {
+                                "status": "known",
+                                "boundedBy": ["five_hour"],
+                            }
+                        ],
+                    },
+                }
+            ],
+        }
+    store = Store(tmp_path)
+    ingest(store, kind, document, "fixture", now=measured)
+    return view(store.read(), now=NOW)
 
 
 def test_card_geometry_bar_and_binding_reset():
@@ -130,46 +174,8 @@ def test_expired_reset_and_missing_values_are_unknown():
 @pytest.mark.parametrize("kind", ["cswap", "quota-axi"])
 @pytest.mark.parametrize("include_null", [False, True])
 def test_ingested_missing_reset_does_not_show_headroom(tmp_path, kind, include_null):
-    window = {"id": "five_hour", "percentRemaining": 25}
-    if include_null:
-        window["resetsAt"] = None
-    measured = "2026-09-11T12:00:00Z"
-    if kind == "cswap":
-        document = {
-            "schemaVersion": 1,
-            "accounts": [
-                {
-                    "number": 1,
-                    "email": "account@example.invalid",
-                    "usageStatus": "ok",
-                    "usageFetchedAt": measured,
-                    "usage": {"fiveHour": window},
-                }
-            ],
-        }
-    else:
-        document = {
-            "schemaVersion": 5,
-            "providers": [
-                {
-                    "provider": "example",
-                    "state": {"status": "fresh", "refreshedAt": measured},
-                    "windows": [window],
-                    "quotaSemantics": {
-                        "status": "known",
-                        "effectiveAvailability": [
-                            {
-                                "status": "known",
-                                "boundedBy": ["five_hour"],
-                            }
-                        ],
-                    },
-                }
-            ],
-        }
-    store = Store(tmp_path)
-    ingest(store, kind, document, "fixture", now=measured)
-    report = view(store.read(), now=NOW)
+    reset = None if include_null else MISSING
+    report = ingested_report(tmp_path, kind, reset)
     account = report["accounts"][0]
     assert account["freshness"] == "fresh"
     assert binding(account, NOW) == (None, "UNKNOWN RESET")
@@ -177,6 +183,32 @@ def test_ingested_missing_reset_does_not_show_headroom(tmp_path, kind, include_n
     assert lines[1] == lines[2] == "░" * 44
     assert lines[7] == "RESETS IN UNKNOWN"
     assert card(report, account, 32, 6, False, NOW)[1] == "REMAIN ?% | UNKNOWN RESET"
+
+
+@pytest.mark.parametrize("kind", ["cswap", "quota-axi"])
+def test_ingested_timezone_naive_reset_does_not_show_headroom(tmp_path, kind):
+    report = ingested_report(tmp_path, kind, "2026-09-12T12:00:00")
+    account = report["accounts"][0]
+    assert binding(account, NOW) == (None, "UNKNOWN RESET")
+    lines = card(report, account, 44, 9, False, NOW)
+    assert lines[1] == lines[2] == "░" * 44
+    assert lines[7] == "RESETS IN UNKNOWN"
+
+
+@pytest.mark.parametrize("kind", ["cswap", "quota-axi"])
+@pytest.mark.parametrize(
+    "reset",
+    ["2026-09-12T12:00:00Z", "2026-09-12T05:00:00-07:00"],
+)
+def test_ingested_explicit_offset_reset_shows_headroom(tmp_path, kind, reset):
+    report = ingested_report(tmp_path, kind, reset)
+    account = report["accounts"][0]
+    window, status = binding(account, NOW)
+    assert status == "FRESH"
+    assert window is not None and window["percentRemaining"] == 25
+    lines = card(report, account, 44, 9, False, NOW)
+    assert lines[1] == lines[2] == "█" * 11 + "░" * 33
+    assert lines[7] == "RESETS IN 24h 0m"
 
 
 def test_all_eleven_accounts_rotate_in_under_a_minute():

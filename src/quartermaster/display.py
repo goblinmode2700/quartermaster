@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
-from .core import parse_time
 from .render import fit_text
 
 DEFAULT_ROTATE_SECONDS = 5.0  # Ten accounts in 50 seconds; eleven in 55.
@@ -26,6 +26,18 @@ GLYPHS = {
     "?": ("▀▀█", " ▀ ", " ▄ "),
     "%": ("█ ▄", " ▄ ", "▄ █"),
 }
+
+
+def _reset_time(value: Any) -> float | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        return None
+    return parsed.timestamp()
 
 
 @dataclass
@@ -122,14 +134,14 @@ def binding(account: dict[str, Any], now: float) -> tuple[dict[str, Any] | None,
         if not math.isfinite(value) or not 0 <= value <= 100:
             return None, "UNKNOWN"
         reset = window.get("resetsAt")
-        stamp = parse_time(reset)
+        stamp = _reset_time(reset)
         if stamp is None or stamp <= now:
             return None, "UNKNOWN RESET"
     return min(windows, key=lambda w: (w["percentRemaining"], w["scope"])), "FRESH"
 
 
 def countdown(value: str | None, now: float) -> str:
-    stamp = parse_time(value)
+    stamp = _reset_time(value)
     if stamp is None:
         return "UNKNOWN"
     seconds = max(0, int(stamp - now))
