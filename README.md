@@ -12,7 +12,7 @@ The older `advise` command remains a limited, separate heuristic with saved assi
 Python 3.11 or newer and `uv` are required.
 
 ```sh
-uv tool install git+https://github.com/goblinmode2700/quartermaster.git
+uv tool install https://github.com/goblinmode2700/quartermaster/releases/download/v0.3.0/quartermaster_quota-0.3.0-py3-none-any.whl
 quartermaster --help
 ```
 
@@ -20,10 +20,18 @@ For a local wheel:
 
 ```sh
 uv build
-uv tool install --force dist/quartermaster_quota-0.3.0.dev0-py3-none-any.whl
+uv tool install --force dist/quartermaster_quota-0.3.0-py3-none-any.whl
 ```
 
 State defaults to `~/.local/state/quartermaster`. Override it with `--state-dir` or `QUARTERMASTER_STATE_DIR`.
+
+To update an existing installation:
+
+```sh
+uv tool install --force https://github.com/goblinmode2700/quartermaster/releases/download/v0.3.0/quartermaster_quota-0.3.0-py3-none-any.whl
+```
+
+See [the 0.3.0 release notes](docs/releases/v0.3.0.md) for changes, data handling, and compatibility limits.
 
 Consultations also require an installed, authenticated Claude Code executable.
 Quartermaster does not install Claude or choose an authentication method.
@@ -221,7 +229,7 @@ Fixtures use reserved `.invalid` identities and future timestamps; they contain 
 ## Validation and integration status
 
 The consultation change includes 33 focused tests for source preservation, argument forwarding, private packets, terminal behavior, and process failures.
-The complete suite passed against the installed development wheel outside the checkout.
+The complete suite passed against the installed 0.3.0 wheel outside the checkout.
 See [the validation record](openspec/changes/native-claude-consultations/validation.md) for results and remaining limits.
 No live Claude or provider call ran during these checks.
 

@@ -1,7 +1,8 @@
 # Validation results
 
 Date: 2026-09-11.
-Package: `quartermaster-quota 0.3.0.dev0`. This is an unpublished development version.
+Package: `quartermaster-quota 0.3.0`.
+The release wheel repeated the development checks before publication.
 
 ## Passed checks
 
