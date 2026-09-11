@@ -43,7 +43,10 @@ def parser() -> argparse.ArgumentParser:
     )
     tui.add_argument("--compact", action="store_true", help="Use the compact multi-account layout")
     selection = sub.add_parser("view", help="Select an account for the rotating display")
-    selection.add_argument("selector", help="1-based index, full identity, unique label, or auto")
+    selection.add_argument(
+        "selector",
+        help="1-based index, full identity, unique label, auto, or a disambiguating type:value",
+    )
     adv = sub.add_parser("advise")
     adv.add_argument("--request-id", required=True)
     adv.add_argument("--provider", required=True)

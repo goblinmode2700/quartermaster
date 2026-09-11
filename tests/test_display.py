@@ -91,6 +91,33 @@ def test_quota_axi_uses_only_explicit_bounds():
     assert binding(account, NOW)[0] is None
 
 
+@pytest.mark.parametrize(
+    "semantics",
+    [
+        "known",
+        [],
+        {"status": "known", "effectiveAvailability": "five_hour"},
+        {"status": "known", "effectiveAvailability": ["five_hour"]},
+        {
+            "status": "known",
+            "effectiveAvailability": [{"status": "known", "boundedBy": "five_hour"}],
+        },
+        {
+            "status": "known",
+            "effectiveAvailability": [{"status": "known", "boundedBy": [{}]}],
+        },
+    ],
+)
+def test_malformed_quota_semantics_fail_closed(semantics):
+    report = fleet(1)
+    account = report["accounts"][0]
+    account["source"] = "quota-axi"
+    account["usageStatus"] = "fresh"
+    account["quotaSemantics"] = semantics
+    assert binding(account, NOW) == (None, "UNKNOWN BOUNDS")
+    assert "UNKNOWN BOUNDS" in card(report, account, 44, 9, False, NOW)[6]
+
+
 def test_expired_reset_and_missing_values_are_unknown():
     account = fleet(1)["accounts"][0]
     account["windows"][0]["percentRemaining"] = None
@@ -191,6 +218,27 @@ def test_view_command_preserves_sources_and_ledger(tmp_path, capsys):
     assert store.path.read_bytes() == snapshot
     ingest(store, "cswap", {"schemaVersion": 1, "accounts": []}, "fixture")
     assert store.read()["view"] == after["view"] | {"identity": None, "mode": "auto", "revision": 4}
+
+
+def test_view_selector_requires_disambiguation_when_forms_overlap(tmp_path):
+    store = Store(tmp_path)
+    accounts = fleet(2)["accounts"]
+    accounts[0]["identity"] = "2"
+    accounts[0]["label"] = "auto"
+    accounts[1]["label"] = "2"
+    with store.locked() as state:
+        state["sources"] = {"fixture": {"accounts": accounts}}
+        store.write(state)
+
+    before = store.path.read_bytes()
+    with pytest.raises(QuartermasterError):
+        select_view(store, "2")
+    assert store.path.read_bytes() == before
+    assert select_view(store, "identity:2")["identity"] == "2"
+    assert select_view(store, "label:2")["identity"] == "identity-2"
+    assert select_view(store, "index:2")["identity"] == "identity-2"
+    assert select_view(store, "label:auto")["identity"] == "2"
+    assert select_view(store, "auto")["mode"] == "auto"
 
 
 @pytest.mark.parametrize(

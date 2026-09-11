@@ -59,6 +59,7 @@ quartermaster tui --rotate 5
 quartermaster tui --rotate 0
 quartermaster tui --compact
 quartermaster view 2
+quartermaster view label:2
 quartermaster view auto
 quartermaster advise --request-id REQ --provider claude \
   --metadata-json '{"demandEvidence":true}'
@@ -75,7 +76,7 @@ quartermaster reconcile REQ cancel
 
 Keys `1`–`9` select the corresponding account; `0` selects account ten. Space or Right advances; Left goes back. Manual selection holds until `r` resumes rotation. With `--rotate 0`, automatic advancement remains disabled. `q` and Escape exit. Larger fleets remain reachable through navigation or the `view` command.
 
-`quartermaster view SELECTOR` holds a card by its one-based position in `status --json`, full account identity, or unique label. Ambiguous labels are rejected. `quartermaster view auto` resumes rotation. The command writes only a `view` entry under the existing state lock and preserves quota snapshots and requests. The TUI reads new selections on its next refresh; `--refresh` defaults to five seconds. Each selection has a revision, so a repeated agent command can override a later keyboard selection. Keyboard choices affect only that display process. Restarting a display reapplies the saved selection.
+`quartermaster view SELECTOR` holds a card by its one-based position in `status --json`, full account identity, or unique label. Ambiguous selectors are rejected. Use `index:`, `identity:`, or `label:` when selector forms overlap; these prefixes also select numeric identities, numeric labels, or the label `auto`. `quartermaster view auto` resumes rotation. The command writes only a `view` entry under the existing state lock and preserves quota snapshots and requests. The TUI reads new selections on its next refresh; `--refresh` defaults to five seconds. Each selection has a revision, so a repeated agent command can override a later keyboard selection. Keyboard choices affect only that display process. Restarting a display reapplies the saved selection.
 
 Selected identities remain selected if account order changes. If a held account disappears, the display says it is unavailable. Resume rotation or select another account to continue.
 
@@ -85,7 +86,7 @@ Below nine rows the selected account uses a compact text card. Below 20×3 the d
 
 ### Compact display
 
-Use `tui --compact` for the multi-account layout. At 32 columns by 6 rows, two Claude accounts remain visible together. Larger frames add account rows as space permits. Smaller panes mark hidden counts and emit a minimum-size message when unusable. `status` prints a static overview. `!`, `stale`, and `unknown` remain meaningful without color.
+Use `tui --compact` for the multi-account layout. Two Claude accounts remain visible together. Smaller panes mark hidden counts and emit a minimum-size message when unusable. `status` prints a static overview. `!`, `stale`, and `unknown` remain meaningful without color.
 
 Account labels use the available terminal width, while quota and reset columns remain aligned even when reset clocks exceed five characters. Labels that exceed the available space end in `~`. The freshness marker is separated from the label by a space.
 

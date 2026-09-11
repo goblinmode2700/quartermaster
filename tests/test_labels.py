@@ -83,6 +83,7 @@ def test_control_characters_cannot_change_terminal_layout(label):
     assert "\n" not in lines[1] and "\x1b" not in lines[1] and "\t" not in lines[1]
 
 
-def test_large_compact_frame_shows_all_accounts():
+def test_large_compact_frame_keeps_two_account_layout():
     lines = render(report([f"account-{i}" for i in range(11)]), 80, 24)
-    assert sum(line.startswith("account-") for line in lines) == 11
+    assert sum(line.startswith("account-") for line in lines) == 2
+    assert "details: +9 hidden !" in lines

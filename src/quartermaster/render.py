@@ -74,7 +74,7 @@ def render(report: dict[str, Any], width: int, height: int) -> list[str]:
         lines.append((f"detail 1  +{hidden} hidden" if hidden else "detail 1  all shown")[:width])
         return lines[:height]
     claude = [a for a in accounts if a["provider"] == "claude"]
-    visible = (claude + [a for a in accounts if a["provider"] != "claude"])[: height - 4]
+    visible = (claude + [a for a in accounts if a["provider"] != "claude"])[:2]
     lines = ["REMAIN 5h / 7d  reset5h"]
     suffixes = []
     for a in visible:

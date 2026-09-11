@@ -214,16 +214,31 @@ def select_view(store: Store, selector: str) -> dict[str, Any]:
         selection = {"mode": "auto", "identity": None}
         if selector != "auto":
             accounts = view(state)["accounts"]
-            if selector.isascii() and selector.isdigit():
-                index = int(selector) - 1
-                matches = accounts[index:index + 1] if index >= 0 else []
+            kind, separator, value = selector.partition(":")
+            if separator and kind in {"index", "identity", "label"}:
+                if kind == "index":
+                    if not value.isascii() or not value.isdigit():
+                        matches = []
+                    else:
+                        index = int(value) - 1
+                        matches = accounts[index:index + 1] if index >= 0 else []
+                elif kind == "identity":
+                    matches = [a for a in accounts if a["identity"] == value]
+                else:
+                    matches = [a for a in accounts if a["label"] == value]
             else:
                 matches = [a for a in accounts if a["identity"] == selector]
-                if not matches:
-                    matches = [a for a in accounts if a["label"] == selector]
-            if len(matches) != 1:
-                raise QuartermasterError("selector must match one account index, identity, or unique label")
-            selection = {"mode": "hold", "identity": matches[0]["identity"]}
+                matches.extend(a for a in accounts if a["label"] == selector)
+                if selector.isascii() and selector.isdigit():
+                    index = int(selector) - 1
+                    if index >= 0:
+                        matches.extend(accounts[index:index + 1])
+            identities = {match["identity"] for match in matches}
+            if len(identities) != 1:
+                raise QuartermasterError(
+                    "selector must resolve to one account; use index:, identity:, or label: to disambiguate"
+                )
+            selection = {"mode": "hold", "identity": identities.pop()}
         selection["revision"] = (state.get("view") or {}).get("revision", 0) + 1
         state["view"] = selection
         store.write(state)

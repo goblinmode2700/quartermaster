@@ -91,12 +91,22 @@ def binding(account: dict[str, Any], now: float) -> tuple[dict[str, Any] | None,
         return None, "UNKNOWN"
     windows = account.get("windows", [])
     if account.get("source") == "quota-axi":
-        semantics = account.get("quotaSemantics") or {}
+        semantics = account.get("quotaSemantics")
+        if not isinstance(semantics, dict):
+            return None, "UNKNOWN BOUNDS"
         scopes = semantics.get("effectiveAvailability", [])
         if (
             semantics.get("status") != "known"
+            or not isinstance(scopes, list)
             or not scopes
-            or any(s.get("status") != "known" or s.get("boundConflict") for s in scopes)
+            or any(
+                not isinstance(scope, dict)
+                or scope.get("status") != "known"
+                or scope.get("boundConflict")
+                or not isinstance(scope.get("boundedBy"), list)
+                or any(not isinstance(bound, str) for bound in scope["boundedBy"])
+                for scope in scopes
+            )
         ):
             return None, "UNKNOWN BOUNDS"
         bound_ids = {wid for scope in scopes for wid in scope.get("boundedBy", [])}
