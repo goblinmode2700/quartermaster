@@ -17,7 +17,7 @@ For a local wheel:
 
 ```sh
 uv build
-uv tool install --force dist/quartermaster_quota-0.1.0-py3-none-any.whl
+uv tool install --force dist/quartermaster_quota-0.1.1-py3-none-any.whl
 ```
 
 State defaults to `~/.local/state/quartermaster`. Override it with `--state-dir` or `QUARTERMASTER_STATE_DIR`.
@@ -66,6 +66,8 @@ quartermaster reconcile REQ cancel
 
 At 32 columns by 6 rows, two Claude accounts remain visible together. Smaller panes retain account rows where possible, mark hidden counts, and emit an explicit minimum-size message when unusable. `!`, `stale`, and `unknown` remain meaningful without color.
 
+Account labels use the available terminal width, while quota and reset columns remain aligned even when reset clocks exceed five characters. Labels that exceed the available space end in `~`. The freshness marker is separated from the label by a space.
+
 ## Advice contract
 
 Advice is arithmetic, advisory, and deterministic:
@@ -78,7 +80,7 @@ Advice is arithmetic, advisory, and deterministic:
 
 The ledger uses one stable `flock` with bounded wait, re-reads state under the lock, deduplicates request IDs by content, computes against pending/active demand, and atomically persists the decision before returning it. Contention exits 75 with `BUSY`. A lost reply can be retried with the same request ID. Reusing an ID with changed content fails. A launch changes pending demand to active; it does not release it. Time alone never releases a reservation. Cancellation or completion is explicit.
 
-This first release intentionally does not predict task token cost, promise completion before reset, coordinate multiple hosts, merge provider identities without explicit evidence, switch accounts, kill tasks, or block launches. Existing runtime launch records are the future process/account binding hook.
+Quartermaster does not predict task token cost, promise completion before reset, coordinate multiple hosts, merge provider identities without explicit evidence, switch accounts, kill tasks, or block launches. Existing runtime launch records are the future process/account binding hook.
 
 ## Synthetic check
 

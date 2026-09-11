@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "quartermaster-quota"
-version = "0.1.0"
+version = "0.1.1"
 description = "Credential-neutral quota evidence, compact terminal display, and deterministic advisory ledger"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -15,7 +15,7 @@ classifiers = [
   "Programming Language :: Python :: 3",
   "Environment :: Console :: Curses",
 ]
-dependencies = []
+dependencies = ["wcwidth>=0.2.13"]
 
 [project.scripts]
 quartermaster = "quartermaster.cli:main"
@@ -33,4 +33,3 @@ dev = ["pytest>=8.3", "ruff>=0.12"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
-
