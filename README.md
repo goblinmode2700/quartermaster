@@ -72,9 +72,9 @@ quartermaster reconcile REQ cancel
 
 ### Rotating display
 
-`tui` shows one account at a time in bright white on black. A 44×9 pane fits a two-row headroom bar, three-row block digits, the limiting window, its reset countdown, and the account position. All ingested accounts participate. The default five-second interval completes a pass through ten accounts in 50 seconds, or eleven in 55 seconds. `--rotate SECONDS` changes the interval; `--rotate 0` holds.
+Interactive `tui` shows one account at a time in bright white on black. A 44×9 pane fits a two-row headroom bar, three-row block digits, the limiting window, its reset countdown, and the account position. All ingested accounts participate. The default five-second interval completes a pass through ten accounts in 50 seconds, or eleven in 55 seconds. `--rotate SECONDS` changes the interval; `--rotate 0` holds.
 
-Interactive TUI mode requires a UTF-8 locale. Quartermaster uses the current locale when possible, tries common UTF-8 fallbacks, and exits with an error if none is available.
+Interactive TUI mode requires a UTF-8 locale and terminal color support. Quartermaster uses the current locale when possible, tries common UTF-8 fallbacks, and exits with an actionable error if either requirement is unavailable. `tui --once` remains available for noninteractive output and does not change terminal colors.
 
 Keys `1`–`9` select the corresponding account; `0` selects account ten. Space or Right advances; Left goes back. Manual selection holds until `r` resumes rotation. With `--rotate 0`, automatic advancement remains disabled. `q` and Escape exit. Larger fleets remain reachable through navigation or the `view` command.
 
@@ -82,11 +82,11 @@ Keys `1`–`9` select the corresponding account; `0` selects account ten. Space 
 
 Selected identities remain selected if account order changes. If a held account disappears, the display says it is unavailable. Resume rotation or select another account to continue.
 
-The bar and digits show the lowest remaining percentage among reported limiting windows; the countdown belongs to that same window. Values are rounded down to whole percentages. For quota-axi, explicit known window relationships are required. A limiting window is known only when its reset timestamp includes an explicit UTC offset; `Z` is accepted. An omitted, null, malformed, timezone-naive, or expired reset shows `UNKNOWN RESET` and `?` instead of headroom. Other stale, unavailable, missing, or conflicting evidence also shows `?` and its status. Unknown-window relationships are labeled `UNKNOWN BOUNDS`. This display does not estimate how many tasks an account can finish.
+The bar and digits show the lowest remaining percentage among reported limiting windows; the countdown belongs to that same window. Values are rounded down to whole percentages. Numeric output in rotating cards, compact mode, and plain `status` requires timezone-aware measurement and reset timestamps; `Z` and explicit offsets are accepted. An omitted, null, malformed, timezone-naive, or expired reset shows `UNKNOWN RESET` and `?` instead of headroom.
+
+For quota-axi, the known scopes must cover every reported window. Each scope's effective percentage must equal the minimum of its referenced windows, and its limiting-window identifiers must exactly identify every referenced window tied at that minimum. Unknown or conflicting scopes, unresolved bounds, duplicate identifiers, incomplete window coverage, and inconsistent limiter metadata show `UNKNOWN BOUNDS` and `?`. Other stale, unavailable, or missing evidence also fails closed. The display does not estimate how many tasks an account can finish.
 
 Below nine rows the selected account uses a compact text card. Below 20×3 the display reports the minimum size. Without `--compact`, `tui --once` prints one card and exits; it does not rotate or change terminal colors.
-
-Measurement and reset timestamps must include a UTC offset. Each reported effective percentage must equal the minimum percentage of its referenced windows. Conflicting scope or limiting-window metadata shows `UNKNOWN BOUNDS`.
 
 ### Compact display
 
