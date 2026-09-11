@@ -86,6 +86,8 @@ The bar and digits show the lowest remaining percentage among reported limiting 
 
 Below nine rows the selected account uses a compact text card. Below 20×3 the display reports the minimum size. Without `--compact`, `tui --once` prints one card and exits; it does not rotate or change terminal colors.
 
+Measurement and reset timestamps must include a UTC offset. Each reported effective percentage must equal the minimum percentage of its referenced windows. Conflicting scope or limiting-window metadata shows `UNKNOWN BOUNDS`.
+
 ### Compact display
 
 Use `tui --compact` for the multi-account layout. Two Claude accounts remain visible together. Smaller panes mark hidden counts and emit a minimum-size message when unusable. `status` prints a static overview. `!`, `stale`, and `unknown` remain meaningful without color.

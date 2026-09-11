@@ -1,6 +1,7 @@
 import copy
 import json
 import multiprocessing
+from datetime import UTC, datetime
 
 import pytest
 from wcwidth import wcswidth
@@ -23,6 +24,7 @@ def fleet(count=11):
                 "source": "cswap",
                 "freshness": "fresh",
                 "usageStatus": "ok",
+                "measurementAt": "2026-09-11T12:00:00Z",
                 "windows": [
                     {
                         "scope": "five_hour",
@@ -41,11 +43,12 @@ def fleet(count=11):
     }
 
 
-def ingested_report(tmp_path, kind, reset=MISSING):
+def ingested_report(
+    tmp_path, kind, reset=MISSING, *, measured="2026-09-11T12:00:00Z", effective=25
+):
     window = {"id": "five_hour", "percentRemaining": 25}
     if reset is not MISSING:
         window["resetsAt"] = reset
-    measured = "2026-09-11T12:00:00Z"
     if kind == "cswap":
         document = {
             "schemaVersion": 1,
@@ -71,7 +74,9 @@ def ingested_report(tmp_path, kind, reset=MISSING):
                         "status": "known",
                         "effectiveAvailability": [
                             {
+                                "scope": "all_models",
                                 "status": "known",
+                                "effectivePercentRemaining": effective,
                                 "boundedBy": ["five_hour"],
                             }
                         ],
@@ -127,7 +132,12 @@ def test_quota_axi_uses_only_explicit_bounds():
     account["quotaSemantics"] = {
         "status": "known",
         "effectiveAvailability": [
-            {"status": "known", "scope": "all_models", "boundedBy": ["five_hour"]}
+            {
+                "status": "known",
+                "scope": "all_models",
+                "boundedBy": ["five_hour"],
+                "effectivePercentRemaining": 80,
+            }
         ],
     }
     assert binding(account, NOW)[0]["scope"] == "five_hour"
@@ -209,6 +219,113 @@ def test_ingested_explicit_offset_reset_shows_headroom(tmp_path, kind, reset):
     lines = card(report, account, 44, 9, False, NOW)
     assert lines[1] == lines[2] == "█" * 11 + "░" * 33
     assert lines[7] == "RESETS IN 24h 0m"
+
+
+@pytest.mark.parametrize("kind", ["cswap", "quota-axi"])
+def test_ingested_naive_measurement_does_not_show_headroom(tmp_path, kind):
+    measured = datetime.fromtimestamp(NOW, UTC).astimezone().replace(tzinfo=None).isoformat()
+    report = ingested_report(tmp_path, kind, "2099-01-01T00:00:00Z", measured=measured)
+    account = report["accounts"][0]
+    assert account["freshness"] == "fresh"
+    assert binding(account, NOW) == (None, "UNKNOWN MEASUREMENT")
+    assert card(report, account, 44, 9, False, NOW)[1] == "░" * 44
+
+
+@pytest.mark.parametrize(
+    "effective", [0, 90, None, True, "25", -1, 101, float("nan"), float("inf")]
+)
+def test_ingested_conflicting_effective_quota_does_not_show_headroom(tmp_path, effective):
+    report = ingested_report(tmp_path, "quota-axi", "2099-01-01T00:00:00Z", effective=effective)
+    account = report["accounts"][0]
+    assert binding(account, NOW) == (None, "UNKNOWN BOUNDS")
+    assert card(report, account, 44, 9, False, NOW)[1] == "░" * 44
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "missing-effective",
+        "empty-bounds",
+        "duplicate-bounds",
+        "missing-scope",
+        "duplicate-scope",
+        "duplicate-window",
+        "unresolved",
+        "conflict-marker",
+        "wrong-limiter",
+        "malformed-limiter",
+        "second-scope-conflict",
+    ],
+)
+def test_conflicting_normalized_scope_metadata_fails_closed(tmp_path, case):
+    report = ingested_report(tmp_path, "quota-axi", "2099-01-01T00:00:00Z")
+    account = report["accounts"][0]
+    semantics = account["quotaSemantics"]
+    scope = semantics["effectiveAvailability"][0]
+    if case == "missing-effective":
+        del scope["effectivePercentRemaining"]
+    elif case == "empty-bounds":
+        scope["boundedBy"] = []
+    elif case == "duplicate-bounds":
+        scope["boundedBy"] *= 2
+    elif case == "missing-scope":
+        del scope["scope"]
+    elif case == "duplicate-scope":
+        semantics["effectiveAvailability"].append(copy.deepcopy(scope))
+    elif case == "duplicate-window":
+        account["windows"].append(copy.deepcopy(account["windows"][0]))
+    elif case == "unresolved":
+        semantics["unresolvedWindowIds"] = ["unknown"]
+    elif case == "conflict-marker":
+        scope["boundConflict"] = {}
+    elif case == "wrong-limiter":
+        scope["limitingWindowIds"] = ["unknown"]
+    elif case == "malformed-limiter":
+        scope["limitingWindowIds"] = [{}]
+    else:
+        semantics["effectiveAvailability"].append(
+            {
+                **scope,
+                "scope": "other_models",
+                "effectivePercentRemaining": 0,
+            }
+        )
+    assert binding(account, NOW) == (None, "UNKNOWN BOUNDS")
+    assert card(report, account, 44, 9, False, NOW)[1] == "░" * 44
+
+
+def test_consistent_multiple_scopes_show_their_limiting_window(tmp_path):
+    report = ingested_report(tmp_path, "quota-axi", "2026-09-12T12:00:00Z")
+    account = report["accounts"][0]
+    account["windows"].append(
+        {
+            "scope": "weekly",
+            "percentRemaining": 10,
+            "resetsAt": "2026-09-15T12:00:00Z",
+        }
+    )
+    scopes = account["quotaSemantics"]["effectiveAvailability"]
+    scopes[0]["limitingWindowIds"] = ["five_hour"]
+    scopes.append(
+        {
+            "scope": "other_models",
+            "status": "known",
+            "boundedBy": ["five_hour", "weekly"],
+            "effectivePercentRemaining": 10,
+            "limitingWindowIds": ["weekly"],
+        }
+    )
+    window, status = binding(account, NOW)
+    assert status == "FRESH" and window["scope"] == "weekly"
+    assert card(report, account, 44, 9, False, NOW)[7] == "RESETS IN 4d 0h"
+
+
+@pytest.mark.parametrize("kind", ["cswap", "quota-axi"])
+def test_explicit_measurement_offset_keeps_valid_evidence(tmp_path, kind):
+    report = ingested_report(
+        tmp_path, kind, "2026-09-12T12:00:00Z", measured="2026-09-11T05:00:00-07:00"
+    )
+    assert binding(report["accounts"][0], NOW)[1] == "FRESH"
 
 
 def test_all_eleven_accounts_rotate_in_under_a_minute():
