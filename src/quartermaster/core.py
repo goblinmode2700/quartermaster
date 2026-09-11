@@ -272,7 +272,7 @@ def rate_evidence(state: dict[str, Any], account: dict[str, Any], clock: float) 
             continue
         rate = (prior_pct - current_pct) / (current_at - previous_at)
         reset_at = parse_time(current.get("resetsAt"))
-        projected = None if reset_at is None else current_pct - rate * max(0, reset_at - clock)
+        projected = None if reset_at is None else current_pct - rate * max(0, reset_at - current_at)
         intervals.append({"scope": current["scope"], "pointsPerSecond": rate,
                           "projectedRemainingAtReset": projected})
     if not intervals:

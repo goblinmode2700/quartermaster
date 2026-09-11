@@ -91,6 +91,29 @@ def test_rate_uses_distinct_samples_and_invalidates_reset_change(tmp_path):
     assert {w["scope"] for w in result["rateEvidence"]["windows"]} == {"seven_day"}
 
 
+def test_rate_projection_starts_at_current_measurement(tmp_path):
+    store = fresh_store(tmp_path)
+    previous = load("cswap.json")
+    previous["accounts"] = previous["accounts"][:1]
+    previous["accounts"][0]["usage"]["fiveHour"]["pct"] = 49
+    previous["accounts"][0]["usage"]["fiveHour"]["resetsAt"] = "2099-01-01T00:41:00Z"
+    ingest(store, "cswap", previous, "fixture", "2099-01-01T00:00:01Z")
+    current = load("cswap.json")
+    current["accounts"] = current["accounts"][:1]
+    current["accounts"][0]["usageFetchedAt"] = "2099-01-01T00:01:00Z"
+    current["accounts"][0]["usage"]["fiveHour"]["pct"] = 50
+    current["accounts"][0]["usage"]["fiveHour"]["resetsAt"] = "2099-01-01T00:41:00Z"
+    ingest(store, "cswap", current, "fixture", "2099-01-01T00:01:01Z")
+
+    result = advise(store, "rate-origin", "claude", None, {"demandEvidence": True},
+                    now=4070908980)
+
+    five_hour = next(w for w in result["rateEvidence"]["windows"]
+                     if w["scope"] == "five_hour")
+    assert five_hour["projectedRemainingAtReset"] == pytest.approx(10)
+    assert result["decision"] == "YELLOW"
+
+
 def _consult(path: str, request_id: str, queue):
     queue.put(advise(Store(Path(path), lock_timeout=5), request_id, "claude", None,
                        {"demandEvidence": True}, now=4070908801))
