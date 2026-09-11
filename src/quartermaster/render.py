@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
+from wcwidth import wcswidth
+
 
 def _remaining(account: dict[str, Any], scope: str) -> str:
     values = [w.get("percentRemaining") for w in account.get("windows", [])
@@ -26,12 +28,19 @@ def _reset(account: dict[str, Any]) -> str:
 
 
 def _account_rows(labels: list[str], suffixes: list[str], width: int) -> list[str]:
-    budget = max(1, width - max((len(suffix) for suffix in suffixes), default=0))
+    budget = max(1, width - max((wcswidth(suffix) for suffix in suffixes), default=0))
     rows = []
     for label, suffix in zip(labels, suffixes):
-        if len(label) > budget:
-            label = label[:budget - 1] + "~"
-        rows.append(f"{label:<{budget}}{suffix}"[:width])
+        label_width = wcswidth(label)
+        if label_width > budget:
+            prefix = ""
+            for character in label:
+                if wcswidth(prefix + character) + 1 > budget:
+                    break
+                prefix += character
+            label = prefix + "~"
+            label_width = wcswidth(label)
+        rows.append(f"{label}{' ' * (budget - max(0, label_width))}{suffix}")
     return rows
 
 

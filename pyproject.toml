@@ -15,7 +15,7 @@ classifiers = [
   "Programming Language :: Python :: 3",
   "Environment :: Console :: Curses",
 ]
-dependencies = []
+dependencies = ["wcwidth>=0.2.13"]
 
 [project.scripts]
 quartermaster = "quartermaster.cli:main"

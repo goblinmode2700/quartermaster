@@ -1,4 +1,5 @@
 import pytest
+from wcwidth import wcswidth
 
 from quartermaster import render as display
 from quartermaster.render import render
@@ -38,6 +39,15 @@ def test_quota_columns_align_and_overlong_labels_are_marked():
     assert lines[1].index("!") == lines[2].index("!")
     assert lines[1].endswith("?")
     assert all(len(line) <= 32 for line in lines)
+
+
+def test_wide_labels_preserve_terminal_width_and_column_alignment():
+    lines = render(report(["账户一账户二账户三", "slot-2"]), 32, 6)
+    assert lines[1].split()[0].endswith("~")
+    assert wcswidth(lines[1]) == 32
+    assert lines[1].index("!") != lines[2].index("!")
+    assert wcswidth(lines[1][:lines[1].index("!")]) == wcswidth(lines[2][:lines[2].index("!")])
+    assert all(wcswidth(line) <= 32 for line in lines)
 
 
 def test_long_reset_clocks_keep_their_space(monkeypatch):
