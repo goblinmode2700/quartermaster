@@ -17,7 +17,7 @@ For a local wheel:
 
 ```sh
 uv build
-uv tool install --force dist/quartermaster_quota-0.1.0-py3-none-any.whl
+uv tool install --force dist/quartermaster_quota-0.1.1-py3-none-any.whl
 ```
 
 State defaults to `~/.local/state/quartermaster`. Override it with `--state-dir` or `QUARTERMASTER_STATE_DIR`.
@@ -65,6 +65,8 @@ quartermaster reconcile REQ cancel
 `status` and `tui` only read local state. TUI redraws do not collect provider data. Non-TTY `tui` automatically renders one plain-text frame.
 
 At 32 columns by 6 rows, two Claude accounts remain visible together. Smaller panes retain account rows where possible, mark hidden counts, and emit an explicit minimum-size message when unusable. `!`, `stale`, and `unknown` remain meaningful without color.
+
+Account labels use the available terminal width, with space reserved for quota values and reset clocks. Labels that exceed that space end in `~`. The freshness marker is separated from the label by a space.
 
 ## Advice contract
 

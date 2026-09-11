@@ -25,6 +25,16 @@ def _reset(account: dict[str, Any]) -> str:
         return "?"
 
 
+def _account_rows(labels: list[str], suffixes: list[str], width: int) -> list[str]:
+    budget = max(1, width - max((len(suffix) for suffix in suffixes), default=0))
+    rows = []
+    for label, suffix in zip(labels, suffixes):
+        if len(label) > budget:
+            label = label[:budget - 1] + "~"
+        rows.append(f"{label:<{budget}}{suffix}"[:width])
+    return rows
+
+
 def render(report: dict[str, Any], width: int, height: int) -> list[str]:
     accounts = report["accounts"]
     if width < 20 or height < 3:
@@ -32,17 +42,20 @@ def render(report: dict[str, Any], width: int, height: int) -> list[str]:
     if width < 32 or height < 6:
         visible = accounts[:max(1, height - 2)]
         lines = ["REMAIN 5h / 7d"]
-        lines += [f"{a['label'][:6]:6} {_remaining(a,'five_hour'):>3} / {_remaining(a,'seven_day'):>3}%"[:width]
-                  for a in visible]
+        suffixes = [f" {_remaining(a,'five_hour'):>3} / {_remaining(a,'seven_day'):>3}%"
+                    for a in visible]
+        lines += _account_rows([a["label"] for a in visible], suffixes, width)
         hidden = len(accounts) - len(visible)
-        lines.append(f"detail 1  +{hidden} hidden" if hidden else "detail 1  all shown")
+        lines.append((f"detail 1  +{hidden} hidden" if hidden else "detail 1  all shown")[:width])
         return lines[:height]
     claude = [a for a in accounts if a["provider"] == "claude"]
     visible = (claude + [a for a in accounts if a["provider"] != "claude"])[:2]
     lines = ["REMAIN 5h / 7d  reset5h"]
+    suffixes = []
     for a in visible:
         mark = "!" if a["freshness"] != "fresh" else " "
-        lines.append(f"{a['label'][:5]:5}{mark} {_remaining(a,'five_hour'):>3} / {_remaining(a,'seven_day'):>3}%  {_reset(a):>5}"[:width])
+        suffixes.append(f" {mark} {_remaining(a,'five_hour'):>3} / {_remaining(a,'seven_day'):>3}%  {_reset(a):>5}")
+    lines += _account_rows([a["label"] for a in visible], suffixes, width)
     age = max((a.get("ageSeconds") or 0 for a in visible), default=0)
     freshness = "fresh" if visible and all(a["freshness"] == "fresh" for a in visible) else "stale/unknown"
     lines.append(f"age {round(age/60)}m  {freshness}"[:width])

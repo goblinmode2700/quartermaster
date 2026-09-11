@@ -42,7 +42,7 @@ def _tui(store: Store, once: bool, refresh: float) -> None:
         while True:
             height, width = screen.getmaxyx(); screen.erase()
             for row, line in enumerate(render(view(store.read()), width, height)):
-                try: screen.addnstr(row, 0, line, max(0, width - 1))
+                try: screen.addnstr(row, 0, line, width)
                 except curses.error: pass
             screen.refresh()
             deadline = time.monotonic() + refresh
