@@ -6,11 +6,18 @@ from quartermaster.render import render
 
 
 def report(labels):
-    return {"accounts": [
-        {"label": label, "provider": "claude", "freshness": "unknown",
-         "ageSeconds": None, "windows": []}
-        for label in labels
-    ]}
+    return {
+        "accounts": [
+            {
+                "label": label,
+                "provider": "claude",
+                "freshness": "unknown",
+                "ageSeconds": None,
+                "windows": [],
+            }
+            for label in labels
+        ]
+    }
 
 
 @pytest.mark.parametrize("width,height", [(32, 6), (80, 24), (20, 4)])
@@ -21,12 +28,15 @@ def test_default_labels_remain_distinct(width, height):
     assert all(len(line) <= width for line in lines)
 
 
-@pytest.mark.parametrize("width,height,label", [
-    (80, 24, "example-account-with-a-descriptive-label"),
-    (32, 6, "account-one"),
-    (20, 4, "example-1"),
-    (80, 4, "example-account-with-a-descriptive-label"),
-])
+@pytest.mark.parametrize(
+    "width,height,label",
+    [
+        (80, 24, "example-account-with-a-descriptive-label"),
+        (32, 6, "account-one"),
+        (20, 4, "example-1"),
+        (80, 4, "example-account-with-a-descriptive-label"),
+    ],
+)
 def test_label_uses_available_width(width, height, label):
     lines = render(report([label]), width, height)
     assert lines[1].split()[0] == label
@@ -46,7 +56,7 @@ def test_wide_labels_preserve_terminal_width_and_column_alignment():
     assert lines[1].split()[0].endswith("~")
     assert wcswidth(lines[1]) == 32
     assert lines[1].index("!") != lines[2].index("!")
-    assert wcswidth(lines[1][:lines[1].index("!")]) == wcswidth(lines[2][:lines[2].index("!")])
+    assert wcswidth(lines[1][: lines[1].index("!")]) == wcswidth(lines[2][: lines[2].index("!")])
     assert all(wcswidth(line) <= 32 for line in lines)
 
 
