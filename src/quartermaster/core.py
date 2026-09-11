@@ -135,17 +135,34 @@ def normalize_cswap(data: Any, host: str, collected_at: str) -> dict[str, Any]:
                     windows.append(_window(scope, current[key], "cswap"))
             for scoped in current.get("scoped", []):
                 if isinstance(scoped, dict):
-                    windows.append(_window(f"model:{scoped.get('name', 'unknown')}", scoped, "cswap"))
-        accounts.append({
-            "provider": "claude", "source": "cswap", "host": host,
-            "identity": hashlib.sha256(identity.encode()).hexdigest()[:20],
-            "label": str(label), "selector": number, "usageStatus": status,
-            "measurementAt": measurement, "collectedAt": collected_at,
-            "windows": windows,
-            "lastGood": {"measurementAt": row.get("lastGoodFetchedAt"), "available": bool(row.get("lastGoodUsage"))},
-        })
-    return {"kind": "cswap", "upstreamSchemaVersion": 1, "host": host,
-            "collectedAt": collected_at, "accounts": accounts}
+                    windows.append(
+                        _window(f"model:{scoped.get('name', 'unknown')}", scoped, "cswap")
+                    )
+        accounts.append(
+            {
+                "provider": "claude",
+                "source": "cswap",
+                "host": host,
+                "identity": hashlib.sha256(identity.encode()).hexdigest()[:20],
+                "label": str(label),
+                "selector": number,
+                "usageStatus": status,
+                "measurementAt": measurement,
+                "collectedAt": collected_at,
+                "windows": windows,
+                "lastGood": {
+                    "measurementAt": row.get("lastGoodFetchedAt"),
+                    "available": bool(row.get("lastGoodUsage")),
+                },
+            }
+        )
+    return {
+        "kind": "cswap",
+        "upstreamSchemaVersion": 1,
+        "host": host,
+        "collectedAt": collected_at,
+        "accounts": accounts,
+    }
 
 
 def normalize_quota_axi(data: Any, host: str, collected_at: str) -> dict[str, Any]:
@@ -163,34 +180,59 @@ def normalize_quota_axi(data: Any, host: str, collected_at: str) -> dict[str, An
             raise QuartermasterError("quota-axi Claude rows are prohibited; use cswap")
         state = provider.get("state") or {}
         raw_account = provider.get("account") or {}
-        identity_raw = f"{host}|{name}|{raw_account.get('accountId','')}|{raw_account.get('email','')}"
-        windows = [_window(str(w.get("id", "unknown")), w, "quota-axi")
-                   for w in provider.get("windows", []) if isinstance(w, dict)]
-        accounts.append({
-            "provider": name, "source": "quota-axi", "host": host,
-            "identity": hashlib.sha256(identity_raw.encode()).hexdigest()[:20],
-            "label": str(provider.get("plan") or name), "selector": None,
-            "usageStatus": state.get("status", "unavailable"),
-            "measurementAt": state.get("refreshedAt") or data.get("generatedAt"),
-            "collectedAt": collected_at, "windows": windows,
-            "staleReported": bool(state.get("stale")), "quotaSemantics": provider.get("quotaSemantics"),
-        })
-    return {"kind": "quota-axi", "upstreamSchemaVersion": 5, "host": host,
-            "collectedAt": collected_at, "accounts": accounts}
+        identity_raw = (
+            f"{host}|{name}|{raw_account.get('accountId', '')}|{raw_account.get('email', '')}"
+        )
+        windows = [
+            _window(str(w.get("id", "unknown")), w, "quota-axi")
+            for w in provider.get("windows", [])
+            if isinstance(w, dict)
+        ]
+        accounts.append(
+            {
+                "provider": name,
+                "source": "quota-axi",
+                "host": host,
+                "identity": hashlib.sha256(identity_raw.encode()).hexdigest()[:20],
+                "label": str(provider.get("plan") or name),
+                "selector": None,
+                "usageStatus": state.get("status", "unavailable"),
+                "measurementAt": state.get("refreshedAt") or data.get("generatedAt"),
+                "collectedAt": collected_at,
+                "windows": windows,
+                "staleReported": bool(state.get("stale")),
+                "quotaSemantics": provider.get("quotaSemantics"),
+            }
+        )
+    return {
+        "kind": "quota-axi",
+        "upstreamSchemaVersion": 5,
+        "host": host,
+        "collectedAt": collected_at,
+        "accounts": accounts,
+    }
 
 
 def ingest(store: Store, kind: str, data: Any, host: str, now: str | None = None) -> dict[str, Any]:
     collected_at = now or utc_now()
-    normalized = (normalize_cswap if kind == "cswap" else normalize_quota_axi)(data, host, collected_at)
+    normalized = (normalize_cswap if kind == "cswap" else normalize_quota_axi)(
+        data, host, collected_at
+    )
     key = f"{kind}:{host}"
     with store.locked() as state:
+        previous = state["sources"].get(key)
+        if previous:
+            normalized["previousAccounts"] = previous["accounts"]
         state["sources"][key] = normalized
         store.write(state)
     return normalized
 
 
-def view(state: dict[str, Any], now: float | None = None,
-         freshness_seconds: int = DEFAULT_FRESHNESS_SECONDS) -> dict[str, Any]:
+def view(
+    state: dict[str, Any],
+    now: float | None = None,
+    freshness_seconds: int = DEFAULT_FRESHNESS_SECONDS,
+) -> dict[str, Any]:
     clock = now if now is not None else time.time()
     accounts = []
     for source in state["sources"].values():
@@ -199,13 +241,20 @@ def view(state: dict[str, Any], now: float | None = None,
             measured = parse_time(item.get("measurementAt"))
             age = None if measured is None else max(0, clock - measured)
             item["ageSeconds"] = None if age is None else round(age, 1)
-            item["freshness"] = "unknown" if age is None else ("fresh" if age <= freshness_seconds else "stale")
+            item["freshness"] = (
+                "unknown" if age is None else ("fresh" if age <= freshness_seconds else "stale")
+            )
             if item.get("staleReported"):
                 item["freshness"] = "stale"
             accounts.append(item)
-    return {"schemaVersion": SCHEMA_VERSION, "displayedAt": utc_now(), "freshnessSeconds": freshness_seconds,
-            "accounts": accounts, "requests": list(state["requests"].values()),
-            "view": state.get("view")}
+    return {
+        "schemaVersion": SCHEMA_VERSION,
+        "displayedAt": utc_now(),
+        "freshnessSeconds": freshness_seconds,
+        "accounts": accounts,
+        "requests": list(state["requests"].values()),
+        "view": state.get("view"),
+    }
 
 
 def select_view(store: Store, selector: str) -> dict[str, Any]:
@@ -221,7 +270,7 @@ def select_view(store: Store, selector: str) -> dict[str, Any]:
                         matches = []
                     else:
                         index = int(value) - 1
-                        matches = accounts[index:index + 1] if index >= 0 else []
+                        matches = accounts[index : index + 1] if index >= 0 else []
                 elif kind == "identity":
                     matches = [a for a in accounts if a["identity"] == value]
                 else:
@@ -232,7 +281,7 @@ def select_view(store: Store, selector: str) -> dict[str, Any]:
                 if selector.isascii() and selector.isdigit():
                     index = int(selector) - 1
                     if index >= 0:
-                        matches.extend(accounts[index:index + 1])
+                        matches.extend(accounts[index : index + 1])
             identities = {match["identity"] for match in matches}
             if len(identities) != 1:
                 raise QuartermasterError(
@@ -250,8 +299,57 @@ def request_fingerprint(provider: str, model: str | None, metadata: dict[str, An
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
-def advise(store: Store, request_id: str, provider: str, model: str | None,
-           metadata: dict[str, Any], reserve: float = 10, now: float | None = None) -> dict[str, Any]:
+def rate_evidence(state: dict[str, Any], account: dict[str, Any], clock: float) -> dict[str, Any]:
+    """Derive conservative rate evidence from two distinct source measurements."""
+    source = state["sources"].get(f"{account['source']}:{account['host']}", {})
+    previous = next(
+        (a for a in source.get("previousAccounts", []) if a.get("identity") == account["identity"]),
+        None,
+    )
+    current_at = parse_time(account.get("measurementAt"))
+    previous_at = parse_time(previous.get("measurementAt")) if previous else None
+    if not previous or current_at is None or previous_at is None or current_at <= previous_at:
+        return {"status": "unknown", "reason": "two distinct measurements unavailable"}
+    prior_windows = {w["scope"]: w for w in previous.get("windows", [])}
+    intervals = []
+    for current in account.get("windows", []):
+        prior = prior_windows.get(current["scope"])
+        current_pct, prior_pct = (
+            current.get("percentRemaining"),
+            prior.get("percentRemaining") if prior else None,
+        )
+        if (
+            not prior
+            or current.get("resetsAt") != prior.get("resetsAt")
+            or current_pct is None
+            or prior_pct is None
+            or current_pct > prior_pct
+        ):
+            continue
+        rate = (prior_pct - current_pct) / (current_at - previous_at)
+        reset_at = parse_time(current.get("resetsAt"))
+        projected = None if reset_at is None else current_pct - rate * max(0, reset_at - current_at)
+        intervals.append(
+            {
+                "scope": current["scope"],
+                "pointsPerSecond": rate,
+                "projectedRemainingAtReset": projected,
+            }
+        )
+    if not intervals:
+        return {"status": "unknown", "reason": "reset change, counter increase, or missing window"}
+    return {"status": "known", "intervalSeconds": current_at - previous_at, "windows": intervals}
+
+
+def advise(
+    store: Store,
+    request_id: str,
+    provider: str,
+    model: str | None,
+    metadata: dict[str, Any],
+    reserve: float = 10,
+    now: float | None = None,
+) -> dict[str, Any]:
     clock = now if now is not None else time.time()
     fingerprint = request_fingerprint(provider, model, metadata)
     with store.locked() as state:
@@ -270,49 +368,87 @@ def advise(store: Store, request_id: str, provider: str, model: str | None,
         for account in eligible:
             windows = account.get("windows", [])
             pcts = [w["percentRemaining"] for w in windows if w.get("percentRemaining") is not None]
+            rate = rate_evidence(state, account, clock)
+            projected_risk = any(
+                w.get("projectedRemainingAtReset") is not None
+                and w["projectedRemainingAtReset"] <= reserve
+                for w in rate.get("windows", [])
+            )
             if account["freshness"] != "fresh" or not windows or len(pcts) != len(windows):
                 grade, reason = "UNKNOWN", "missing or stale current evidence"
             elif min(pcts) <= 0:
                 grade, reason = "RED", "a limiting window is exhausted"
             elif min(pcts) <= reserve:
                 grade, reason = "YELLOW", f"headroom is at or below {reserve:g}-point reserve"
+            elif projected_risk:
+                grade, reason = "YELLOW", "recent consumption projects through reserve before reset"
             else:
-                pending_green = any(r.get("accountIdentity") == account["identity"] and
-                                    r.get("status") in {"pending", "active"} and r.get("decision") == "GREEN"
-                                    for r in state["requests"].values())
+                pending_green = any(
+                    r.get("accountIdentity") == account["identity"]
+                    and r.get("status") in {"pending", "active"}
+                    and r.get("decision") == "GREEN"
+                    for r in state["requests"].values()
+                )
                 if pending_green:
                     grade, reason = "YELLOW", "account already has unresolved green demand"
                 elif not metadata.get("demandEvidence"):
                     grade, reason = "YELLOW", "quota is healthy but demand evidence is missing"
                 else:
                     grade, reason = "GREEN", "fresh windows preserve reserve with demand evidence"
-            decisions.append((grade, min(pcts) if pcts else -1, account, reason))
+            decisions.append((grade, min(pcts) if pcts else -1, account, reason, rate))
         rank = {"GREEN": 3, "YELLOW": 2, "UNKNOWN": 1, "RED": 0}
         if decisions:
-            grade, _, account, reason = max(decisions, key=lambda x: (rank[x[0]], x[1], x[2]["identity"]))
+            grade, _, account, reason, rate = max(
+                decisions, key=lambda x: (rank[x[0]], x[1], x[2]["identity"])
+            )
             identity, label = account["identity"], account["label"]
         else:
-            grade, reason, identity, label = "UNKNOWN", "no eligible account evidence", None, None
-        record = {"requestId": request_id, "fingerprint": fingerprint, "provider": provider,
-                  "model": model, "decision": grade, "reason": reason, "accountIdentity": identity,
-                  "accountLabel": label, "status": "pending", "createdAt": utc_now(),
-                  "metadata": metadata, "validity": "recorded"}
+            grade, reason, identity, label, rate = (
+                "UNKNOWN",
+                "no eligible account evidence",
+                None,
+                None,
+                {"status": "unknown", "reason": "no eligible account"},
+            )
+        record = {
+            "requestId": request_id,
+            "fingerprint": fingerprint,
+            "provider": provider,
+            "model": model,
+            "decision": grade,
+            "reason": reason,
+            "accountIdentity": identity,
+            "accountLabel": label,
+            "status": "pending",
+            "createdAt": utc_now(),
+            "metadata": metadata,
+            "rateEvidence": rate,
+            "validity": "recorded",
+        }
         state["requests"][request_id] = record
         store.write(state)
         return record
 
 
-def reconcile(store: Store, request_id: str, event: str, process_id: str | None = None) -> dict[str, Any]:
+def reconcile(
+    store: Store, request_id: str, event: str, process_id: str | None = None
+) -> dict[str, Any]:
     with store.locked() as state:
         record = state["requests"].get(request_id)
         if not record:
             raise QuartermasterError("unknown request ID")
-        transitions = {"cancel": {"pending", "active"}, "launch": {"pending"}, "complete": {"active"}}
+        transitions = {
+            "cancel": {"pending", "active"},
+            "launch": {"pending"},
+            "complete": {"active"},
+        }
         if event not in transitions or record["status"] not in transitions[event]:
             raise QuartermasterError(f"invalid {event} transition from {record['status']}")
         if event == "launch" and not process_id:
             raise QuartermasterError("launch reconciliation requires --process-id")
-        record["status"] = {"cancel": "cancelled", "launch": "active", "complete": "completed"}[event]
+        record["status"] = {"cancel": "cancelled", "launch": "active", "complete": "completed"}[
+            event
+        ]
         record["reconciledAt"] = utc_now()
         if process_id:
             record["processId"] = process_id

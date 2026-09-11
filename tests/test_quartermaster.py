@@ -41,7 +41,8 @@ def test_quota_axi_preserves_other_source_and_rejects_claude(tmp_path):
     store = fresh_store(tmp_path)
     ingest(store, "quota-axi", load("quota-axi.json"), "fixture", "2099-01-01T00:00:02Z")
     assert len(view(store.read(), now=4070908801)["accounts"]) == 3
-    bad = load("quota-axi.json"); bad["providers"][0]["provider"] = "claude"
+    bad = load("quota-axi.json")
+    bad["providers"][0]["provider"] = "claude"
     with pytest.raises(QuartermasterError, match="prohibited"):
         ingest(store, "quota-axi", bad, "fixture")
 
@@ -49,7 +50,8 @@ def test_quota_axi_preserves_other_source_and_rejects_claude(tmp_path):
 def test_stale_and_unknown_are_explicit(tmp_path):
     report = view(fresh_store(tmp_path).read(), now=4070910000, freshness_seconds=300)
     assert {a["freshness"] for a in report["accounts"]} == {"stale"}
-    state = fresh_store(tmp_path).read(); state["sources"]["cswap:fixture"]["accounts"][0]["measurementAt"] = None
+    state = fresh_store(tmp_path).read()
+    state["sources"]["cswap:fixture"]["accounts"][0]["measurementAt"] = None
     assert view(state, now=4070908801)["accounts"][0]["freshness"] == "unknown"
 
 
@@ -72,17 +74,71 @@ def test_missing_demand_is_yellow_and_retry_is_stable(tmp_path):
         advise(store, "r1", "claude", "other", {}, now=4070908801)
 
 
+def test_rate_uses_distinct_samples_and_invalidates_reset_change(tmp_path):
+    store = fresh_store(tmp_path)
+    newer = load("cswap.json")
+    newer["accounts"] = newer["accounts"][:1]
+    newer["accounts"][0]["usageFetchedAt"] = "2099-01-01T00:01:00Z"
+    newer["accounts"][0]["usage"]["fiveHour"]["pct"] = 59
+    ingest(store, "cswap", newer, "fixture", "2099-01-01T00:01:01Z")
+    result = advise(store, "rate", "claude", None, {"demandEvidence": True}, now=4070908861)
+    assert result["rateEvidence"]["status"] == "known"
+    changed = load("cswap.json")
+    changed["accounts"] = changed["accounts"][:1]
+    changed["accounts"][0]["usageFetchedAt"] = "2099-01-01T00:02:00Z"
+    changed["accounts"][0]["usage"]["fiveHour"]["resetsAt"] = "2099-01-02T01:12:00Z"
+    ingest(store, "cswap", changed, "fixture", "2099-01-01T00:02:01Z")
+    result = advise(store, "changed", "claude", None, {"demandEvidence": True}, now=4070908921)
+    assert result["rateEvidence"]["status"] == "known"
+    assert {w["scope"] for w in result["rateEvidence"]["windows"]} == {"seven_day"}
+
+
+def test_rate_projection_starts_at_current_measurement(tmp_path):
+    store = fresh_store(tmp_path)
+    previous = load("cswap.json")
+    previous["accounts"] = previous["accounts"][:1]
+    previous["accounts"][0]["usage"]["fiveHour"]["pct"] = 49
+    previous["accounts"][0]["usage"]["fiveHour"]["resetsAt"] = "2099-01-01T00:41:00Z"
+    ingest(store, "cswap", previous, "fixture", "2099-01-01T00:00:01Z")
+    current = load("cswap.json")
+    current["accounts"] = current["accounts"][:1]
+    current["accounts"][0]["usageFetchedAt"] = "2099-01-01T00:01:00Z"
+    current["accounts"][0]["usage"]["fiveHour"]["pct"] = 50
+    current["accounts"][0]["usage"]["fiveHour"]["resetsAt"] = "2099-01-01T00:41:00Z"
+    ingest(store, "cswap", current, "fixture", "2099-01-01T00:01:01Z")
+
+    result = advise(store, "rate-origin", "claude", None, {"demandEvidence": True}, now=4070908980)
+
+    five_hour = next(w for w in result["rateEvidence"]["windows"] if w["scope"] == "five_hour")
+    assert five_hour["projectedRemainingAtReset"] == pytest.approx(10)
+    assert result["decision"] == "YELLOW"
+
+
 def _consult(path: str, request_id: str, queue):
-    queue.put(advise(Store(Path(path), lock_timeout=5), request_id, "claude", None,
-                       {"demandEvidence": True}, now=4070908801))
+    queue.put(
+        advise(
+            Store(Path(path), lock_timeout=5),
+            request_id,
+            "claude",
+            None,
+            {"demandEvidence": True},
+            now=4070908801,
+        )
+    )
 
 
 def test_concurrent_advice_allows_only_one_green(tmp_path):
     fresh_store(tmp_path)
-    ctx = multiprocessing.get_context("spawn"); queue = ctx.Queue()
-    processes = [ctx.Process(target=_consult, args=(str(tmp_path), f"r{i}", queue)) for i in range(2)]
-    for process in processes: process.start()
-    for process in processes: process.join(10); assert process.exitcode == 0
+    ctx = multiprocessing.get_context("spawn")
+    queue = ctx.Queue()
+    processes = [
+        ctx.Process(target=_consult, args=(str(tmp_path), f"r{i}", queue)) for i in range(2)
+    ]
+    for process in processes:
+        process.start()
+    for process in processes:
+        process.join(10)
+        assert process.exitcode == 0
     results = [queue.get(timeout=1), queue.get(timeout=1)]
     assert sum(r["decision"] == "GREEN" for r in results) == 2  # distinct accounts
     third = advise(Store(tmp_path), "r3", "claude", None, {"demandEvidence": True}, now=4070908801)
@@ -104,4 +160,3 @@ def test_32_by_6_and_tiny_rendering(tmp_path):
     assert len(lines) == 6 and all(len(line) <= 32 for line in lines)
     assert any("P20x" in line for line in lines) and any("O5x" in line for line in lines)
     assert "Need 20x3" in render(report, 10, 2)[0]
-
