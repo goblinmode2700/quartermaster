@@ -127,6 +127,58 @@ def test_expired_reset_and_missing_values_are_unknown():
     assert binding(account, NOW)[0] is None
 
 
+@pytest.mark.parametrize("kind", ["cswap", "quota-axi"])
+@pytest.mark.parametrize("include_null", [False, True])
+def test_ingested_missing_reset_does_not_show_headroom(tmp_path, kind, include_null):
+    window = {"id": "five_hour", "percentRemaining": 25}
+    if include_null:
+        window["resetsAt"] = None
+    measured = "2026-09-11T12:00:00Z"
+    if kind == "cswap":
+        document = {
+            "schemaVersion": 1,
+            "accounts": [
+                {
+                    "number": 1,
+                    "email": "account@example.invalid",
+                    "usageStatus": "ok",
+                    "usageFetchedAt": measured,
+                    "usage": {"fiveHour": window},
+                }
+            ],
+        }
+    else:
+        document = {
+            "schemaVersion": 5,
+            "providers": [
+                {
+                    "provider": "example",
+                    "state": {"status": "fresh", "refreshedAt": measured},
+                    "windows": [window],
+                    "quotaSemantics": {
+                        "status": "known",
+                        "effectiveAvailability": [
+                            {
+                                "status": "known",
+                                "boundedBy": ["five_hour"],
+                            }
+                        ],
+                    },
+                }
+            ],
+        }
+    store = Store(tmp_path)
+    ingest(store, kind, document, "fixture", now=measured)
+    report = view(store.read(), now=NOW)
+    account = report["accounts"][0]
+    assert account["freshness"] == "fresh"
+    assert binding(account, NOW) == (None, "UNKNOWN RESET")
+    lines = card(report, account, 44, 9, False, NOW)
+    assert lines[1] == lines[2] == "░" * 44
+    assert lines[7] == "RESETS IN UNKNOWN"
+    assert card(report, account, 32, 6, False, NOW)[1] == "REMAIN ?% | UNKNOWN RESET"
+
+
 def test_all_eleven_accounts_rotate_in_under_a_minute():
     report = fleet()
     rotation = Rotation()

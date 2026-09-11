@@ -123,7 +123,7 @@ def binding(account: dict[str, Any], now: float) -> tuple[dict[str, Any] | None,
             return None, "UNKNOWN"
         reset = window.get("resetsAt")
         stamp = parse_time(reset)
-        if reset is not None and (stamp is None or stamp <= now):
+        if stamp is None or stamp <= now:
             return None, "UNKNOWN RESET"
     return min(windows, key=lambda w: (w["percentRemaining"], w["scope"])), "FRESH"
 
