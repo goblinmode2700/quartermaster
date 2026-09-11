@@ -204,7 +204,45 @@ def view(state: dict[str, Any], now: float | None = None,
                 item["freshness"] = "stale"
             accounts.append(item)
     return {"schemaVersion": SCHEMA_VERSION, "displayedAt": utc_now(), "freshnessSeconds": freshness_seconds,
-            "accounts": accounts, "requests": list(state["requests"].values())}
+            "accounts": accounts, "requests": list(state["requests"].values()),
+            "view": state.get("view")}
+
+
+def select_view(store: Store, selector: str) -> dict[str, Any]:
+    """Persist display-only intent in the same transaction as all other state writers."""
+    with store.locked() as state:
+        selection = {"mode": "auto", "identity": None}
+        if selector != "auto":
+            accounts = view(state)["accounts"]
+            kind, separator, value = selector.partition(":")
+            if separator and kind in {"index", "identity", "label"}:
+                if kind == "index":
+                    if not value.isascii() or not value.isdigit():
+                        matches = []
+                    else:
+                        index = int(value) - 1
+                        matches = accounts[index:index + 1] if index >= 0 else []
+                elif kind == "identity":
+                    matches = [a for a in accounts if a["identity"] == value]
+                else:
+                    matches = [a for a in accounts if a["label"] == value]
+            else:
+                matches = [a for a in accounts if a["identity"] == selector]
+                matches.extend(a for a in accounts if a["label"] == selector)
+                if selector.isascii() and selector.isdigit():
+                    index = int(selector) - 1
+                    if index >= 0:
+                        matches.extend(accounts[index:index + 1])
+            identities = {match["identity"] for match in matches}
+            if len(identities) != 1:
+                raise QuartermasterError(
+                    "selector must resolve to one account; use index:, identity:, or label: to disambiguate"
+                )
+            selection = {"mode": "hold", "identity": identities.pop()}
+        selection["revision"] = (state.get("view") or {}).get("revision", 0) + 1
+        state["view"] = selection
+        store.write(state)
+        return selection
 
 
 def request_fingerprint(provider: str, model: str | None, metadata: dict[str, Any]) -> str:

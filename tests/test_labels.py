@@ -74,3 +74,16 @@ def test_resize_restores_full_label():
     data = report(["example-account-with-long-label"])
     assert render(data, 32, 6)[1].split()[0].endswith("~")
     assert render(data, 80, 6)[1].split()[0] == data["accounts"][0]["label"]
+
+
+@pytest.mark.parametrize("label", ["\n" + "a" * 100, "\x1b[2Jaccount", "account\tname", "a\u202eb"])
+def test_control_characters_cannot_change_terminal_layout(label):
+    lines = render(report([label, "slot-2"]), 32, 6)
+    assert all(0 <= wcswidth(line) <= 32 for line in lines)
+    assert "\n" not in lines[1] and "\x1b" not in lines[1] and "\t" not in lines[1]
+
+
+def test_large_compact_frame_keeps_two_account_layout():
+    lines = render(report([f"account-{i}" for i in range(11)]), 80, 24)
+    assert sum(line.startswith("account-") for line in lines) == 2
+    assert "details: +9 hidden !" in lines

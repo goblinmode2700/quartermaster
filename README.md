@@ -2,7 +2,7 @@
 
 Quartermaster is a credential-neutral quota evidence viewer and deterministic assignment adviser. It combines multi-account Claude evidence from [cswap](https://github.com/realiti4/claude-swap) with non-Claude provider evidence from [quota-axi](https://github.com/kunchenguid/quota-axi), without reading credentials, refreshing sessions, switching accounts, or launching agents.
 
-It provides one agent-readable JSON contract, a compact curses/plain-text display, and a one-host request ledger that prevents concurrent callers from receiving the same unrecorded green reservation.
+It provides one agent-readable JSON contract, a rotating account-card display with an optional compact layout, and a one-host request ledger that prevents concurrent callers from receiving the same unrecorded green reservation.
 
 ## Install
 
@@ -17,7 +17,7 @@ For a local wheel:
 
 ```sh
 uv build
-uv tool install --force dist/quartermaster_quota-0.1.1-py3-none-any.whl
+uv tool install --force dist/quartermaster_quota-0.2.0-py3-none-any.whl
 ```
 
 State defaults to `~/.local/state/quartermaster`. Override it with `--state-dir` or `QUARTERMASTER_STATE_DIR`.
@@ -55,6 +55,12 @@ quartermaster ingest quota-axi [--file FILE] [--host HOST]
 quartermaster status --json
 quartermaster status
 quartermaster tui [--once]
+quartermaster tui --rotate 5
+quartermaster tui --rotate 0
+quartermaster tui --compact
+quartermaster view 2
+quartermaster view label:2
+quartermaster view auto
 quartermaster advise --request-id REQ --provider claude \
   --metadata-json '{"demandEvidence":true}'
 quartermaster reconcile REQ launch --process-id launcher:123
@@ -62,11 +68,33 @@ quartermaster reconcile REQ complete
 quartermaster reconcile REQ cancel
 ```
 
-`status` and `tui` only read local state. TUI redraws do not collect provider data. Non-TTY `tui` automatically renders one plain-text frame.
+`status` and `tui` only read local state. TUI redraws do not collect provider data. Non-TTY `tui` automatically renders one frame.
 
-At 32 columns by 6 rows, two Claude accounts remain visible together. Smaller panes retain account rows where possible, mark hidden counts, and emit an explicit minimum-size message when unusable. `!`, `stale`, and `unknown` remain meaningful without color.
+### Rotating display
+
+Interactive `tui` shows one account at a time in bright white on black. A 44×9 pane fits a two-row headroom bar, three-row block digits, the limiting window, its reset countdown, and the account position. All ingested accounts participate. The default five-second interval completes a pass through ten accounts in 50 seconds, or eleven in 55 seconds. `--rotate SECONDS` changes the interval; `--rotate 0` holds.
+
+Interactive TUI mode requires a UTF-8 locale and terminal color support. Quartermaster uses the current locale when possible, tries common UTF-8 fallbacks, and exits with an actionable error if either requirement is unavailable. `tui --once` remains available for noninteractive output and does not change terminal colors.
+
+Keys `1`–`9` select the corresponding account; `0` selects account ten. Space or Right advances; Left goes back. Manual selection holds until `r` resumes rotation. With `--rotate 0`, automatic advancement remains disabled. `q` and Escape exit. Larger fleets remain reachable through navigation or the `view` command.
+
+`quartermaster view SELECTOR` holds a card by its one-based position in `status --json`, full account identity, or unique label. Ambiguous selectors are rejected. Use `index:`, `identity:`, or `label:` when selector forms overlap; these prefixes also select numeric identities, numeric labels, or the label `auto`. `quartermaster view auto` resumes rotation. The command writes only a `view` entry under the existing state lock and preserves quota snapshots and requests. The TUI reads new selections on its next refresh; `--refresh` defaults to five seconds. Each selection has a revision, so a repeated agent command can override a later keyboard selection. Keyboard choices affect only that display process. Restarting a display reapplies the saved selection.
+
+Selected identities remain selected if account order changes. If a held account disappears, the display says it is unavailable. Resume rotation or select another account to continue.
+
+The bar and digits show the lowest remaining percentage among reported limiting windows; the countdown belongs to that same window. Values are rounded down to whole percentages. Numeric output in rotating cards, compact mode, and plain `status` requires timezone-aware measurement and reset timestamps; `Z` and explicit offsets are accepted. An omitted, null, malformed, timezone-naive, or expired reset shows `UNKNOWN RESET` and `?` instead of headroom.
+
+For quota-axi, the known scopes must cover every reported window. Each scope's effective percentage must equal the minimum of its referenced windows, and its limiting-window identifiers must exactly identify every referenced window tied at that minimum. Unknown or conflicting scopes, unresolved bounds, duplicate identifiers, incomplete window coverage, and inconsistent limiter metadata show `UNKNOWN BOUNDS` and `?`. Other stale, unavailable, or missing evidence also fails closed. The display does not estimate how many tasks an account can finish.
+
+Below nine rows the selected account uses a compact text card. Below 20×3 the display reports the minimum size. Without `--compact`, `tui --once` prints one card and exits; it does not rotate or change terminal colors.
+
+### Compact display
+
+Use `tui --compact` for the multi-account layout. Two Claude accounts remain visible together. Smaller panes mark hidden counts and emit a minimum-size message when unusable. `status` prints a static overview. `!`, `stale`, and `unknown` remain meaningful without color.
 
 Account labels use the available terminal width, while quota and reset columns remain aligned even when reset clocks exceed five characters. Labels that exceed the available space end in `~`. The freshness marker is separated from the label by a space.
+
+Control characters that can alter terminal layout are replaced with `?` before rendering; stored evidence is unchanged.
 
 ## Advice contract
 
@@ -97,7 +125,7 @@ Fixtures use reserved `.invalid` identities and future timestamps; they contain 
 
 ## Validation and integration status
 
-The repository test suite covers schema rejection, atomic last-good preservation, independent source updates, two-account identity, stale/unknown states, weekly exhaustion, request replay/content mismatch, concurrent reservations, reconciliation, and 32×6/tiny rendering. CI runs lint, tests, and wheel builds on Python 3.11–3.13.
+The repository test suite covers schema rejection, atomic last-good preservation, independent source updates, two-account identity, stale/unknown states, weekly exhaustion, request replay/content mismatch, concurrent reservations, reconciliation, rotating-card geometry and evidence binding, direct selection, concurrent selection/ingestion/advice updates, compact and tiny rendering, and live PTY rotation, controls, resize, and restart. CI runs lint, tests, and wheel builds on Python 3.11–3.13.
 
 Synthetic tests do not verify a live installation. Before use:
 
