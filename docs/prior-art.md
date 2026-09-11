@@ -8,3 +8,9 @@ Pattern: multi-source quota normalization plus a single-host reservation ledger.
 - Reject a credential engine, daemon, scheduler, database, web UI, automatic switcher, or admission gate. They exceed the advisory boundary and duplicate mature owners.
 
 No upstream source code is copied. Both surveyed upstream projects are MIT licensed.
+
+## Rotating terminal cards
+
+Adopt the existing curses input, background-color, and resize facilities, and the existing `wcwidth` dependency for terminal-cell measurement. Port the terminal-clock presentation pattern: a small fixed block-glyph alphabet, a thick bar, and one card per frame. Keep only an in-process rotation cursor and deadline; this is display timing, not a collection scheduler.
+
+Reuse `Store.locked()` and its atomic state replacement for agent selection. Each display command increments a revision and holds an existing account identity or resumes rotation. No additional transport, daemon, or credential access is needed.

@@ -2,8 +2,27 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from typing import Any
+from unicodedata import category
 
 from wcwidth import wcswidth
+
+
+def fit_text(text: str, width: int) -> str:
+    """Make external text safe for a single terminal row and fit its cell budget."""
+    if width <= 0:
+        return ""
+    text = "".join(
+        "?" if category(c).startswith("C") and c not in {"\u200c", "\u200d"} else c
+        for c in str(text)
+    )
+    if wcswidth(text) <= width:
+        return text
+    prefix = ""
+    for character in text:
+        if wcswidth(prefix + character) + 1 > width:
+            break
+        prefix += character
+    return prefix + "~"
 
 
 def _remaining(account: dict[str, Any], scope: str) -> str:
@@ -34,15 +53,8 @@ def _account_rows(labels: list[str], suffixes: list[str], width: int) -> list[st
     budget = max(1, width - max((wcswidth(suffix) for suffix in suffixes), default=0))
     rows = []
     for label, suffix in zip(labels, suffixes):
+        label = fit_text(label, budget)
         label_width = wcswidth(label)
-        if label_width > budget:
-            prefix = ""
-            for character in label:
-                if wcswidth(prefix + character) + 1 > budget:
-                    break
-                prefix += character
-            label = prefix + "~"
-            label_width = wcswidth(label)
         rows.append(f"{label}{' ' * (budget - max(0, label_width))}{suffix}")
     return rows
 
@@ -62,7 +74,7 @@ def render(report: dict[str, Any], width: int, height: int) -> list[str]:
         lines.append((f"detail 1  +{hidden} hidden" if hidden else "detail 1  all shown")[:width])
         return lines[:height]
     claude = [a for a in accounts if a["provider"] == "claude"]
-    visible = (claude + [a for a in accounts if a["provider"] != "claude"])[:2]
+    visible = (claude + [a for a in accounts if a["provider"] != "claude"])[: height - 4]
     lines = ["REMAIN 5h / 7d  reset5h"]
     suffixes = []
     for a in visible:

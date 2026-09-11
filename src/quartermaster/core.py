@@ -204,7 +204,30 @@ def view(state: dict[str, Any], now: float | None = None,
                 item["freshness"] = "stale"
             accounts.append(item)
     return {"schemaVersion": SCHEMA_VERSION, "displayedAt": utc_now(), "freshnessSeconds": freshness_seconds,
-            "accounts": accounts, "requests": list(state["requests"].values())}
+            "accounts": accounts, "requests": list(state["requests"].values()),
+            "view": state.get("view")}
+
+
+def select_view(store: Store, selector: str) -> dict[str, Any]:
+    """Persist display-only intent in the same transaction as all other state writers."""
+    with store.locked() as state:
+        selection = {"mode": "auto", "identity": None}
+        if selector != "auto":
+            accounts = view(state)["accounts"]
+            if selector.isascii() and selector.isdigit():
+                index = int(selector) - 1
+                matches = accounts[index:index + 1] if index >= 0 else []
+            else:
+                matches = [a for a in accounts if a["identity"] == selector]
+                if not matches:
+                    matches = [a for a in accounts if a["label"] == selector]
+            if len(matches) != 1:
+                raise QuartermasterError("selector must match one account index, identity, or unique label")
+            selection = {"mode": "hold", "identity": matches[0]["identity"]}
+        selection["revision"] = (state.get("view") or {}).get("revision", 0) + 1
+        state["view"] = selection
+        store.write(state)
+        return selection
 
 
 def request_fingerprint(provider: str, model: str | None, metadata: dict[str, Any]) -> str:

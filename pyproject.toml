@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "quartermaster-quota"
-version = "0.1.1"
+version = "0.2.0"
 description = "Credential-neutral quota evidence, compact terminal display, and deterministic advisory ledger"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -28,7 +28,7 @@ addopts = "-q"
 testpaths = ["tests"]
 
 [dependency-groups]
-dev = ["pytest>=8.3", "ruff>=0.12"]
+dev = ["pytest>=8.3", "ruff>=0.12", "pyte>=0.8.2"]
 
 [tool.ruff]
 line-length = 100

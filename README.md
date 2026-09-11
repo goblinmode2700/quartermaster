@@ -17,7 +17,7 @@ For a local wheel:
 
 ```sh
 uv build
-uv tool install --force dist/quartermaster_quota-0.1.1-py3-none-any.whl
+uv tool install --force dist/quartermaster_quota-0.2.0-py3-none-any.whl
 ```
 
 State defaults to `~/.local/state/quartermaster`. Override it with `--state-dir` or `QUARTERMASTER_STATE_DIR`.
@@ -55,6 +55,11 @@ quartermaster ingest quota-axi [--file FILE] [--host HOST]
 quartermaster status --json
 quartermaster status
 quartermaster tui [--once]
+quartermaster tui --rotate 5
+quartermaster tui --rotate 0
+quartermaster tui --compact
+quartermaster view 2
+quartermaster view auto
 quartermaster advise --request-id REQ --provider claude \
   --metadata-json '{"demandEvidence":true}'
 quartermaster reconcile REQ launch --process-id launcher:123
@@ -62,11 +67,29 @@ quartermaster reconcile REQ complete
 quartermaster reconcile REQ cancel
 ```
 
-`status` and `tui` only read local state. TUI redraws do not collect provider data. Non-TTY `tui` automatically renders one plain-text frame.
+`status` and `tui` only read local state. TUI redraws do not collect provider data. Non-TTY `tui` automatically renders one frame.
 
-At 32 columns by 6 rows, two Claude accounts remain visible together. Smaller panes retain account rows where possible, mark hidden counts, and emit an explicit minimum-size message when unusable. `!`, `stale`, and `unknown` remain meaningful without color.
+### Rotating display
+
+`tui` shows one account at a time on a black background with bright text. A 44×9 pane fits a two-row headroom bar, three-row block digits, the limiting window, its reset countdown, and the account position. All ingested accounts participate. The default five-second interval completes a pass through ten accounts in 50 seconds, or eleven in 55 seconds. `--rotate SECONDS` changes the interval; `--rotate 0` holds.
+
+Keys `1`–`9` select the corresponding account; `0` selects account ten. Space or Right advances; Left goes back. Manual selection holds until `r` resumes rotation. With `--rotate 0`, automatic advancement remains disabled. `q` and Escape exit. Larger fleets remain reachable through navigation or the `view` command.
+
+`quartermaster view SELECTOR` holds a card by its one-based position in `status --json`, full account identity, or unique label. Ambiguous labels are rejected. `quartermaster view auto` resumes rotation. The command writes only a `view` entry under the existing state lock and preserves quota snapshots and requests. The TUI reads new selections on its next refresh; `--refresh` defaults to five seconds. Each selection has a revision, so a repeated agent command can override a later keyboard selection. Keyboard choices affect only that display process. Restarting a display reapplies the saved selection.
+
+Selected identities remain selected if account order changes. If a held account disappears, the display says it is unavailable. Resume rotation or select another account to continue.
+
+The bar and digits show the lowest remaining percentage among reported limiting windows; the countdown belongs to that same window. Values are rounded down to whole percentages. For quota-axi, explicit known window relationships are required. Stale, unavailable, missing, conflicting, or expired evidence shows `?` and its status instead of current headroom. Unknown-window relationships are labeled `UNKNOWN BOUNDS`. This display does not estimate how many tasks an account can finish.
+
+Below nine rows the selected account uses a compact text card. Below 20×3 the display reports the minimum size. `tui --once` prints one card and exits; it does not rotate or change terminal colors.
+
+### Compact display
+
+Use `tui --compact` for the multi-account layout. At 32 columns by 6 rows, two Claude accounts remain visible together. Larger frames add account rows as space permits. Smaller panes mark hidden counts and emit a minimum-size message when unusable. `status` prints a static overview. `!`, `stale`, and `unknown` remain meaningful without color.
 
 Account labels use the available terminal width, while quota and reset columns remain aligned even when reset clocks exceed five characters. Labels that exceed the available space end in `~`. The freshness marker is separated from the label by a space.
+
+Control characters are replaced with `?` before terminal rendering; stored evidence is unchanged.
 
 ## Advice contract
 
