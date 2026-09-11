@@ -270,7 +270,7 @@ def select_view(store: Store, selector: str) -> dict[str, Any]:
                         matches = []
                     else:
                         index = int(value) - 1
-                        matches = accounts[index:index + 1] if index >= 0 else []
+                        matches = accounts[index : index + 1] if index >= 0 else []
                 elif kind == "identity":
                     matches = [a for a in accounts if a["identity"] == value]
                 else:
@@ -281,7 +281,7 @@ def select_view(store: Store, selector: str) -> dict[str, Any]:
                 if selector.isascii() and selector.isdigit():
                     index = int(selector) - 1
                     if index >= 0:
-                        matches.extend(accounts[index:index + 1])
+                        matches.extend(accounts[index : index + 1])
             identities = {match["identity"] for match in matches}
             if len(identities) != 1:
                 raise QuartermasterError(

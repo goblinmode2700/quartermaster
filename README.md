@@ -106,7 +106,9 @@ Advice is arithmetic, advisory, and deterministic:
 4. Fresh windows above reserve are still `YELLOW` when demand evidence is missing or that account already has unresolved green demand.
 5. `GREEN` requires fresh relevant windows, intact reserve, demand evidence, and an unreserved eligible account.
 
-Recent rate evidence requires two distinct measurements of the same identity and window. A reset change, counter increase, or repeated measurement invalidates the interval. When the observed rate projects through the reserve before that window resets, advice is `YELLOW`. A display redraw never creates a rate sample.
+Rate evidence uses two source measurements for the same account identity. Their measurement timestamps must differ. For each window, the scope and reset timestamp must match. Both percentages must be present, and the remaining percentage must not increase. Quartermaster omits an invalid window and reports unknown rate evidence if no valid window remains. Unknown rate evidence does not cause an `UNKNOWN` advice decision.
+
+The projection starts at the current source measurement and ends at the window reset. It does not start at the later advice time. Advice is `YELLOW` if a projection reaches or crosses the reserve. The advice result includes a `rateEvidence` object. For a selected account, this object records the interval and valid window projections. Display redraws do not create rate samples.
 
 The ledger uses one stable `flock` with bounded wait, re-reads state under the lock, deduplicates request IDs by content, computes against pending/active demand, and atomically persists the decision before returning it. Contention exits 75 with `BUSY`. A lost reply can be retried with the same request ID. Reusing an ID with changed content fails. A launch changes pending demand to active; it does not release it. Time alone never releases a reservation. Cancellation or completion is explicit.
 
@@ -127,7 +129,7 @@ Fixtures use reserved `.invalid` identities and future timestamps; they contain 
 
 ## Validation and integration status
 
-The repository test suite covers schema rejection, atomic last-good preservation, independent source updates, two-account identity, stale/unknown states, weekly exhaustion, request replay/content mismatch, concurrent reservations, reconciliation, rotating-card geometry and evidence binding, direct selection, concurrent selection/ingestion/advice updates, compact and tiny rendering, and live PTY rotation, controls, resize, and restart. CI runs lint, tests, and wheel builds on Python 3.11–3.13.
+The repository test suite covers schema rejection, atomic last-good preservation, independent source updates, two-account identity, stale/unknown states, weekly exhaustion, request replay/content mismatch, concurrent reservations, reconciliation, rotating-card geometry and evidence binding, direct selection, concurrent selection/ingestion/advice updates, compact and tiny rendering, and live PTY rotation, controls, resize, and restart. It also covers distinct rate samples and reserve projections from the current source measurement. CI runs lint, tests, and wheel builds on Python 3.11–3.13.
 
 Synthetic tests do not verify a live installation. Before use:
 
